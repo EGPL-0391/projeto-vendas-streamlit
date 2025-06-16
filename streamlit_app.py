@@ -35,22 +35,26 @@ def prever(cliente, produto):
         return dados, "Sem dados suficientes para previsão."
 
     serie = dados.set_index('AnoMes')['Quantidade']
-    serie = serie.asfreq('MS')  # Garante frequência mensal
-    ultimo_mes = serie.index.max()
-    periodos_futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(), periods=6, freq='MS')
+    serie = serie.asfreq('MS')  # Preenche os meses ausentes com NaN
+    serie = serie.fillna(0)     # Considera 0 venda nos meses sem dados
 
     try:
         modelo = ExponentialSmoothing(
             serie,
             trend='mul',
-            damped_trend=True,  # Torna o crescimento menos agressivo
+            damped_trend=True,
             seasonal=None,
             initialization_method='estimated'
         )
         ajuste = modelo.fit()
 
+        # === Calcular a próxima data após o último mês da série ===
+        ultimo_mes = serie.index.max()
+        meses_futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(),
+                                      periods=6, freq='MS')
+
         previsao = (ajuste.forecast(6) * 0.9).clip(upper=serie.max() * 1.1).round().astype(int)
-        previsao.index = periodos_futuros
+        previsao.index = meses_futuros
 
         previsao = previsao.reset_index()
         previsao.columns = ['AnoMes', 'Quantidade']
