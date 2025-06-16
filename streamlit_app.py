@@ -40,7 +40,7 @@ def prever(cliente, produto):
     try:
         modelo = ExponentialSmoothing(
             serie,
-            trend='add',
+            trend='mul',
             damped_trend=True,  # TORNAR A PREVISÃO MAIS REALISTA
             seasonal=None,
             initialization_method='estimated'
@@ -48,7 +48,7 @@ def prever(cliente, produto):
         ajuste = modelo.fit()
 
         # Previsão para os próximos 6 meses, aplicando redutor de 10%
-        previsao = (ajuste.forecast(6) * 0.9).round().astype(int)
+        previsao = (ajuste.forecast(6) * 0.9).clip(upper=serie.max() * 1.1).round().astype(int)
 
         previsao = previsao.reset_index()
         previsao.columns = ['AnoMes', 'Quantidade']
