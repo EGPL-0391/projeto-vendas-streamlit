@@ -1,5 +1,3 @@
-# streamlit_app.py
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -18,9 +16,11 @@ df = pd.read_excel(arquivo, sheet_name='Base vendas')
 df.columns = df.columns.str.strip()
 df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
 df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
+
 df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
 df['Cliente'] = df['Cliente'].astype(str)
 df['Produto'] = df['Produto'].astype(str)
+
 df = df[df['AnoMes'] >= '2024-01-01']
 
 agrupado = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
@@ -35,8 +35,7 @@ def prever(cliente, produto):
         return dados, "Sem dados suficientes para previsão."
 
     serie = dados.set_index('AnoMes')['Quantidade']
-    serie = serie.asfreq('MS')  # Preenche os meses ausentes com NaN
-    serie = serie.fillna(0)     # Considera 0 venda nos meses sem dados
+    serie = serie.asfreq('MS').fillna(0)
 
     try:
         modelo = ExponentialSmoothing(
@@ -48,25 +47,27 @@ def prever(cliente, produto):
         )
         ajuste = modelo.fit()
 
-        # === Calcular a próxima data após o último mês da série ===
         ultimo_mes = serie.index.max()
-        meses_futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(),
-                                      periods=6, freq='MS')
+        meses_futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(), periods=6, freq='MS')
 
         previsao = (ajuste.forecast(6) * 0.9).clip(upper=serie.max() * 1.1).round().astype(int)
         previsao.index = meses_futuros
 
-        previsao = previsao.reset_index()
-        previsao.columns = ['AnoMes', 'Quantidade']
-        previsao['Cliente'] = cliente
-        previsao['Produto'] = produto
-        previsao['Previsao'] = 'Previsão'
-
-        df_plot = pd.concat([dados, previsao], ignore_index=True)
-        return df_plot, None
-
     except Exception:
-        return dados, "Não foi possível gerar previsão (modelo não convergiu)."
+        # Fallback: média dos últimos 3 meses
+        media_recente = serie[-3:].mean()
+        previsao = pd.Series([int(media_recente)] * 6)
+        meses_futuros = pd.date_range(start=serie.index.max() + pd.offsets.MonthBegin(), periods=6, freq='MS')
+        previsao.index = meses_futuros
+
+    previsao = previsao.reset_index()
+    previsao.columns = ['AnoMes', 'Quantidade']
+    previsao['Cliente'] = cliente
+    previsao['Produto'] = produto
+    previsao['Previsao'] = 'Previsão'
+
+    df_plot = pd.concat([dados, previsao], ignore_index=True)
+    return df_plot, None
 
 # === Interface Streamlit ===
 st.set_page_config(page_title="Painel de Vendas", layout="wide")
@@ -84,7 +85,9 @@ if erro:
     st.error(erro)
 
 if not df_plot.empty:
-    fig = px.line(df_plot, x='AnoMes', y='Quantidade', color='Previsao',
-                  title=f"{cliente} - {produto}", markers=True)
+    fig = px.line(
+        df_plot, x='AnoMes', y='Quantidade', color='Previsao',
+        title=f"{cliente} - {produto}", markers=True
+    )
     fig.update_layout(xaxis_title='Mês', yaxis_title='Quantidade Vendida')
     st.plotly_chart(fig, use_container_width=True)
