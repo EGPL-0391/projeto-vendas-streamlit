@@ -38,9 +38,17 @@ def prever(cliente, produto):
     serie.index = pd.date_range(start=serie.index.min(), periods=len(serie), freq='MS')
 
     try:
-        modelo = ExponentialSmoothing(serie, trend='add', seasonal=None, initialization_method='estimated')
+        modelo = ExponentialSmoothing(
+            serie,
+            trend='add',
+            damped_trend=True,  # TORNAR A PREVISÃO MAIS REALISTA
+            seasonal=None,
+            initialization_method='estimated'
+        )
         ajuste = modelo.fit()
-        previsao = ajuste.forecast(12).round().astype(int)
+
+        # Previsão para os próximos 6 meses, aplicando redutor de 10%
+        previsao = (ajuste.forecast(6) * 0.9).round().astype(int)
 
         previsao = previsao.reset_index()
         previsao.columns = ['AnoMes', 'Quantidade']
@@ -70,6 +78,8 @@ if erro:
     st.error(erro)
 
 if not df_plot.empty:
-    fig = px.line(df_plot, x='AnoMes', y='Quantidade', color='Previsao', title=f"{cliente} - {produto}", markers=True)
+    fig = px.line(df_plot, x='AnoMes', y='Quantidade', color='Previsao',
+                  title=f"{cliente} - {produto}", markers=True)
     fig.update_layout(xaxis_title='Mês', yaxis_title='Quantidade Vendida')
     st.plotly_chart(fig, use_container_width=True)
+
