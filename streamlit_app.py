@@ -31,16 +31,17 @@ def prever(cliente, produto):
     dados = dados.sort_values('AnoMes')
     dados['Previsao'] = 'Histórico'
 
-    if dados.empty:
+    if dados.empty or len(dados) < 3:
         return dados, "Sem dados suficientes para previsão."
 
     serie = dados.set_index('AnoMes')['Quantidade']
     serie = serie.asfreq('MS').fillna(0)
 
+    # Tentativa com modelo
     try:
         modelo = ExponentialSmoothing(
             serie,
-            trend='mul',
+            trend='add',  # aditivo geralmente mais estável
             damped_trend=True,
             seasonal=None,
             initialization_method='estimated'
@@ -48,17 +49,18 @@ def prever(cliente, produto):
         ajuste = modelo.fit()
 
         ultimo_mes = serie.index.max()
-        meses_futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(), periods=6, freq='MS')
+        futuros = pd.date_range(start=ultimo_mes + pd.offsets.MonthBegin(), periods=6, freq='MS')
 
-        previsao = (ajuste.forecast(6) * 0.9).clip(upper=serie.max() * 1.1).round().astype(int)
-        previsao.index = meses_futuros
+        previsao = ajuste.forecast(6)
 
-    except Exception:
-        # Fallback: média dos últimos 3 meses
-        media_recente = serie[-3:].mean()
-        previsao = pd.Series([int(media_recente)] * 6)
-        meses_futuros = pd.date_range(start=serie.index.max() + pd.offsets.MonthBegin(), periods=6, freq='MS')
-        previsao.index = meses_futuros
+        # Aplica um redutor leve, se desejar (ex: 5%) e evita explosões com clip no máximo +20%
+        previsao = (previsao * 0.95).clip(upper=serie.max() * 1.2).round().astype(int)
+        previsao.index = futuros
+
+    except Exception as e:
+        # Fallback conservador: repetir média dos últimos 3 meses
+        media = serie[-3:].mean()
+        previsao = pd.Series([int(media)] * 6, index=pd.date_range(start=serie.index.max() + pd.offsets.MonthBegin(), periods=6, freq='MS'))
 
     previsao = previsao.reset_index()
     previsao.columns = ['AnoMes', 'Quantidade']
