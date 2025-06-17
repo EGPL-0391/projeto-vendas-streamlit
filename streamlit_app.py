@@ -94,9 +94,12 @@ if not df_plot.empty:
         }
     )
 
-    # Deixa a linha da previsão em tracejado e mais grossa
-    fig.for_each_trace(
-        lambda t: t.update(line=dict(dash='dot', width=4)) if t.name == 'Previsão' else None
-    )
+    # Força estilo da linha de previsão (independente da formatação do Plotly)
+    for trace in fig.data:
+        if 'Previsão' in trace.name:
+            trace.line.color = "#F10707"
+            trace.line.width = 4
+            trace.line.dash = 'dot'
 
     st.plotly_chart(fig, use_container_width=True)
+
