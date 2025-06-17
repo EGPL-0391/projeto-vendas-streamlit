@@ -21,13 +21,13 @@ df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
 df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
 df['Cliente'] = df['Cliente'].astype(str)
 df['Produto'] = df['Produto'].astype(str)
-df['Grupo'] = df['Grupo'].astype(str)
 df = df[df['AnoMes'] >= '2024-01-01']
 
-agrupado = df.groupby(['Grupo', 'Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
+agrupado = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
 
 # === Função de previsão ===
-def prever(dados, grupo_col, nome_grupo):
+def prever(cliente, produto):
+    dados = agrupado[(agrupado['Cliente'] == cliente) & (agrupado['Produto'] == produto)].copy()
     dados = dados.sort_values('AnoMes')
     dados['Previsao'] = 'Histórico'
 
@@ -40,18 +40,20 @@ def prever(dados, grupo_col, nome_grupo):
     try:
         modelo = ExponentialSmoothing(
             serie,
-            trend='mul',
-            damped_trend=True,
+            trend='add',
+            damped_trend=True,  # TORNAR A PREVISÃO MAIS REALISTA
             seasonal=None,
             initialization_method='estimated'
         )
         ajuste = modelo.fit()
 
-        previsao = (ajuste.forecast(6) * 0.9).clip(upper=serie.max() * 1.1).round().astype(int)
+        # Previsão para os próximos 6 meses, aplicando redutor de 10%
+        previsao = (ajuste.forecast(6) * 0.9).round().astype(int)
 
         previsao = previsao.reset_index()
         previsao.columns = ['AnoMes', 'Quantidade']
-        previsao[grupo_col] = nome_grupo
+        previsao['Cliente'] = cliente
+        previsao['Produto'] = produto
         previsao['Previsao'] = 'Previsão'
 
         df_plot = pd.concat([dados, previsao], ignore_index=True)
@@ -64,36 +66,27 @@ def prever(dados, grupo_col, nome_grupo):
 st.set_page_config(page_title="Painel de Vendas", layout="wide")
 st.title("Painel de Vendas e Previsão")
 
-# Filtros
-grupo_opcoes = sorted(df['Grupo'].unique())
-grupo = st.selectbox("Selecione o Grupo", grupo_opcoes)
-
-clientes = sorted(df[df['Grupo'] == grupo]['Cliente'].unique())
+clientes = sorted(agrupado['Cliente'].unique())
 cliente = st.selectbox("Selecione o Cliente", clientes)
 
-produtos = df[(df['Grupo'] == grupo) & (df['Cliente'] == cliente)]['Produto'].unique()
+produtos = agrupado[agrupado['Cliente'] == cliente]['Produto'].unique()
 produto = st.selectbox("Selecione o Produto", produtos)
 
-# Previsão individual
-dados_ind = agrupado[(agrupado['Grupo'] == grupo) & (agrupado['Cliente'] == cliente) & (agrupado['Produto'] == produto)]
-df_plot_ind, erro_ind = prever(dados_ind.copy(), 'Produto', produto)
+df_plot, erro = prever(cliente, produto)
 
-if erro_ind:
-    st.error(erro_ind)
+if erro:
+    st.error(erro)
 
-if not df_plot_ind.empty:
-    fig = px.line(df_plot_ind, x='AnoMes', y='Quantidade', color='Previsao',
-                  title=f"{cliente} - {produto}", markers=True)
-    fig.update_layout(xaxis_title='Mês', yaxis_title='Quantidade Vendida')
-    st.plotly_chart(fig, use_container_width=True)
-
-# Previsão do grupo
-dados_grp = agrupado[agrupado['Grupo'] == grupo].groupby('AnoMes')['Quantidade'].sum().reset_index()
-dados_grp['Grupo'] = grupo
-df_plot_grp, erro_grp = prever(dados_grp.copy(), 'Grupo', grupo)
-
-if not erro_grp and not df_plot_grp.empty:
-    fig2 = px.line(df_plot_grp, x='AnoMes', y='Quantidade', color='Previsao',
-                   title=f"Previsão Total do Grupo: {grupo}", markers=True)
-    fig2.update_layout(xaxis_title='Mês', yaxis_title='Quantidade Vendida')
-    st.plotly_chart(fig2, use_container_width=True)
+if not df_plot.empty:
+    fig = px.line(
+    df_plot,
+    x='AnoMes',
+    y='Quantidade',
+    color='Previsao',
+    title=f"{cliente} - {produto}",
+    markers=True,
+    color_discrete_map={
+        'Histórico': "#080808",  # Azul padrão do Plotly (ou outro se quiser)
+        'Previsão': "#F10707"       # Linha vermelha para a previsão
+    }
+)
