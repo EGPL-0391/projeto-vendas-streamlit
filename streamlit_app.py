@@ -5,6 +5,9 @@ import pandas as pd
 import plotly.express as px
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
+import logging
+
+logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
 # === Carregar dados ===
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,14 +82,21 @@ if erro:
 
 if not df_plot.empty:
     fig = px.line(
-    df_plot,
-    x='AnoMes',
-    y='Quantidade',
-    color='Previsao',
-    title=f"{cliente} - {produto}",
-    markers=True,
-    color_discrete_map={
-        'Histórico': "#080808",  # Azul padrão do Plotly (ou outro se quiser)
-        'Previsão': "#F10707"       # Linha vermelha para a previsão
-    }
-)
+        df_plot,
+        x='AnoMes',
+        y='Quantidade',
+        color='Previsao',
+        title=f"{cliente} - {produto}",
+        markers=True,
+        color_discrete_map={
+            'Histórico': "#080808",
+            'Previsão': "#F10707"
+        }
+    )
+
+    # Deixa a linha da previsão em tracejado e mais grossa
+    fig.for_each_trace(
+        lambda t: t.update(line=dict(dash='dot', width=4)) if t.name == 'Previsão' else None
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
