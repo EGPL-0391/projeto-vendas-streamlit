@@ -19,13 +19,20 @@ logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 # === Data Validation ===
 def validate_data(df):
     """Valida a estrutura e qualidade dos dados."""
-    required_columns = ['Emissao', 'Cliente', 'Produto', 'Grupo', 'Quantidade']
+    required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
+    optional_columns = ['Grupo']
+    
     missing_cols = [col for col in required_columns if col not in df.columns]
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
     
     if df.empty:
         raise ValueError("Dataframe is empty")
+    
+    # Se Grupo não existir, criamos uma coluna com valor padrão
+    if 'Grupo' not in df.columns:
+        df['Grupo'] = 'Todos'
+        st.warning("⚠️ Coluna 'Grupo' não encontrada. Usando 'Todos' como padrão.")
     
     return True
 
@@ -43,7 +50,7 @@ def load_data():
             st.error(f"❌ Error: Data file not found at {file_path}")
             st.stop()
             
-        df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str, 'Grupo': str})
+        df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
         
         # Clean column names
         df.columns = df.columns.str.strip()
@@ -53,7 +60,7 @@ def load_data():
         
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
-        df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Grupo', 'Quantidade'])
+        df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
         
         # Filter by date
         df = df[df['Emissao'] >= MIN_DATE]
@@ -228,6 +235,7 @@ def main():
         # Get groups for selected client
         grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
         grupos = sorted(grupos, key=lambda x: str(x).lower())
+        grupos = ['Todos'] + list(grupos)
         
         # Create group selector with placeholder
         grupo = st.selectbox(
