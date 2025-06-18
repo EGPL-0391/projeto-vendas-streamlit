@@ -55,9 +55,6 @@ def load_data():
         # Clean column names
         df.columns = df.columns.str.strip()
         
-        # Validate data structure
-        validate_data(df)
-        
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
         df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
@@ -71,8 +68,14 @@ def load_data():
         # Create month column
         df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
         
+        # Add Grupo column if it doesn't exist
+        if 'Grupo' not in df.columns:
+            df['Grupo'] = 'Todos'
+        
         # Group and sum quantities
-        return df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
+        df = df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
+        
+        return df
         
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
