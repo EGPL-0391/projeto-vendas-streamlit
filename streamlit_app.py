@@ -189,12 +189,19 @@ def main():
     with st.spinner("Carregando dados..."):
         data = get_data()
     
-    if data is None:
+    if data is None or data.empty:
         st.error("❌ Não foi possível carregar os dados")
         st.stop()
     
     # Get unique clients
-    clientes = sorted(data['Cliente'].unique())
+    try:
+        clientes = sorted(data['Cliente'].unique())
+    except KeyError as e:
+        st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(data.columns)}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Erro ao processar dados: {str(e)}")
+        st.stop()
     
     # Create client selector with placeholder
     cliente = st.selectbox(
