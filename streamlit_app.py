@@ -206,7 +206,7 @@ def main():
         clientes = data['Cliente'].astype(str).unique()
         clientes = sorted(clientes, key=lambda x: str(x).lower())
     except KeyError as e:
-        st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(data.columns)}")
+        st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(map(str, data.columns))}")
         st.stop()
     except Exception as e:
         st.error(f"❌ Erro ao processar dados: {str(e)}")
