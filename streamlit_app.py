@@ -195,7 +195,10 @@ def main():
     
     # Get unique clients
     try:
-        clientes = sorted(data['Cliente'].unique())
+        # Get unique values and convert to string
+        clientes = data['Cliente'].astype(str).unique()
+        # Sort using a consistent method (case-insensitive)
+        clientes = sorted(clientes, key=lambda x: str(x).lower())
     except KeyError as e:
         st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(data.columns)}")
         st.stop()
