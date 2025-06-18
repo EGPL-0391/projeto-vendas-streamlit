@@ -13,24 +13,24 @@ MIN_DATE = '2024-01-01'
 # Desativa logs de warning do Streamlit
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
-# === Validação dos dados ===
+
 def validate_data(df):
     required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
-    
+
     if df is None or df.empty:
         st.error("❌ O DataFrame está vazio ou não foi carregado.")
         return False
 
-    actual_columns = df.columns.str.lower()
+    actual_columns = [col.lower().strip() for col in df.columns]
     missing_cols = [col for col in required_columns if col.lower() not in actual_columns]
-    
+
     if missing_cols:
         st.error(f"❌ Colunas obrigatórias ausentes: {missing_cols}")
         return False
 
     return True
 
-# === Carrega e prepara os dados ===
+
 def load_data():
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,20 +41,24 @@ def load_data():
             st.stop()
 
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
-        df.columns = df.columns.str.strip()
 
-        # Padronização
+        # Limpa espaços em colunas e valores
+        df.columns = df.columns.str.strip()
         df['Cliente'] = df['Cliente'].str.strip().str.lower()
         df['Produto'] = df['Produto'].str.strip().str.lower()
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
         df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
+
+        # Filtra datas
         df = df[df['Emissao'] >= MIN_DATE]
 
         if df.empty:
             raise ValueError("❌ Nenhum dado restante após filtragem.")
 
         df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
-        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
+
+        # Agrupa por cliente, produto e mês
+        df = df.groupby(['Cliente', 'Produto', 'AnoMes'], as_index=False)['Quantidade'].sum()
 
         return df
 
@@ -62,7 +66,7 @@ def load_data():
         st.error(f"❌ Erro ao carregar dados: {str(e)}")
         st.stop()
 
-# === Previsão ===
+
 def make_forecast(cliente, produto, data):
     try:
         cliente = cliente.strip().lower()
@@ -76,6 +80,7 @@ def make_forecast(cliente, produto, data):
 
         filtered = filtered.sort_values('AnoMes')
         filtered['Previsao'] = 'Histórico'
+
         serie = filtered.set_index('AnoMes')['Quantidade']
 
         model = ExponentialSmoothing(
@@ -94,12 +99,13 @@ def make_forecast(cliente, produto, data):
         forecast_df['Previsao'] = 'Previsão'
 
         result = pd.concat([filtered, forecast_df], ignore_index=True)
+
         return result, None
 
     except Exception as e:
         return None, f"❌ Erro ao gerar previsão: {str(e)}"
 
-# === Gráfico ===
+
 def create_plot(df, title):
     try:
         fig = px.line(
@@ -116,11 +122,12 @@ def create_plot(df, title):
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
 
-# === Principal ===
+
 def main():
     st.set_page_config(page_title="Painel de Vendas e Previsão", layout="wide")
     st.title("📊 Painel de Vendas e Previsão")
 
+    # Limpa cache ao iniciar (opcional, pode tirar se quiser manter)
     st.cache_data.clear()
 
     @st.cache_data
@@ -133,10 +140,9 @@ def main():
     if not validate_data(data):
         st.stop()
 
-    try:
-        clientes = sorted(data['Cliente'].unique())
-    except Exception as e:
-        st.error(f"❌ Erro ao acessar clientes: {str(e)}")
+    clientes = sorted(data['Cliente'].unique())
+    if not clientes:
+        st.error("❌ Nenhum cliente disponível nos dados.")
         st.stop()
 
     cliente = st.selectbox("Selecione o Cliente", clientes, help="Escolha um cliente")
@@ -149,6 +155,7 @@ def main():
             st.stop()
 
         produtos = sorted(produtos_df['Produto'].unique())
+
         if not produtos:
             st.error(f"❌ Cliente '{cliente}' não possui produtos.")
             st.stop()
@@ -180,6 +187,7 @@ def main():
                     st.write("- Total previsto:", previsao['Quantidade'].sum())
                     st.write("- Média mensal prevista:", previsao['Quantidade'].mean().round(2))
                     st.write("- Mediana prevista:", previsao['Quantidade'].median())
+
 
 if __name__ == "__main__":
     main()
