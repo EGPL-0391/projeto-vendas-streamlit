@@ -19,7 +19,7 @@ logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 # === Data Validation ===
 def validate_data(df):
     """Valida a estrutura e qualidade dos dados."""
-    required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
+    required_columns = ['Emissao', 'Cliente', 'Produto', 'Grupo', 'Quantidade']
     missing_cols = [col for col in required_columns if col not in df.columns]
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
@@ -28,6 +28,10 @@ def validate_data(df):
         raise ValueError("Dataframe is empty")
     
     return True
+
+def get_last_emission_date(data):
+    """Retorna a data da última emissão."""
+    return data['Emissao'].max()
 
 def load_data():
     try:
@@ -39,7 +43,7 @@ def load_data():
             st.error(f"❌ Error: Data file not found at {file_path}")
             st.stop()
             
-        df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
+        df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str, 'Grupo': str})
         
         # Clean column names
         df.columns = df.columns.str.strip()
@@ -49,7 +53,7 @@ def load_data():
         
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
-        df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
+        df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Grupo', 'Quantidade'])
         
         # Filter by date
         df = df[df['Emissao'] >= MIN_DATE]
@@ -61,43 +65,49 @@ def load_data():
         df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
         
         # Group and sum quantities
-        return df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
+        return df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
         
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
         st.stop()
 
-def make_forecast(cliente, produto, data):
+def make_forecast(cliente, produto, grupo, data):
     """
     Gera previsão para um cliente e produto específicos.
     
     Args:
         cliente (str): Nome do cliente
         produto (str): Nome do produto
+        grupo (str): Nome do grupo
         data (pd.DataFrame): DataFrame com os dados de vendas
         
     Returns:
         tuple: (DataFrame com previsão, mensagem de erro)
     """
     try:
-        if not isinstance(cliente, str) or not isinstance(produto, str):
-            return None, "❌ Cliente e produto devem ser strings"
+        if not isinstance(cliente, str) or not isinstance(produto, str) or not isinstance(grupo, str):
+            return None, "❌ Cliente, produto e grupo devem ser strings"
             
         # Filter data for specific client and product
-        filtered = data[(data['Cliente'] == cliente) & (data['Produto'] == produto)].copy()
+        filtered = data[(data['Cliente'] == cliente) & 
+                      (data['Produto'] == produto if produto != 'Todos' else True) &
+                      (data['Grupo'] == grupo)].copy()
         
         if filtered.empty:
-            return None, f"❌ No data found for client: {cliente} and product: {produto}"
+            return None, f"❌ No data found for client: {cliente}, product: {produto}, group: {grupo}"
         
         # Sort by date
         filtered = filtered.sort_values('AnoMes')
         filtered['Previsao'] = 'Histórico'
         
-        # Create time series
+        # Get last emission date
+        last_emission = filtered['AnoMes'].max()
+        
+        # Create time series from last emission date
         serie = filtered.set_index('AnoMes')['Quantidade']
-        serie.index = pd.date_range(start=serie.index.min(), 
-                                   periods=len(serie), 
-                                   freq='MS')
+        serie = serie.reindex(pd.date_range(start=last_emission, 
+                                          periods=len(serie), 
+                                          freq='MS'))
         
         # Create and fit model
         model = ExponentialSmoothing(
@@ -110,14 +120,16 @@ def make_forecast(cliente, produto, data):
         
         fitted = model.fit()
         
-        # Make forecast (with reduction factor)
+        # Make forecast (with reduction factor) starting from next month
+        forecast_start = last_emission + pd.DateOffset(months=1)
         forecast = (fitted.forecast(FORECAST_MONTHS) * REDUCTION_FACTOR).round().astype(int)
         
         # Prepare forecast data
         forecast_df = forecast.reset_index()
         forecast_df.columns = ['AnoMes', 'Quantidade']
         forecast_df['Cliente'] = cliente
-        forecast_df['Produto'] = produto
+        forecast_df['Produto'] = produto if produto != 'Todos' else 'Todos'
+        forecast_df['Grupo'] = grupo
         forecast_df['Previsao'] = 'Previsão'
         
         # Combine historical and forecast data
@@ -195,9 +207,7 @@ def main():
     
     # Get unique clients
     try:
-        # Get unique values and convert to string
         clientes = data['Cliente'].astype(str).unique()
-        # Sort using a consistent method (case-insensitive)
         clientes = sorted(clientes, key=lambda x: str(x).lower())
     except KeyError as e:
         st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(data.columns)}")
@@ -215,35 +225,61 @@ def main():
     )
     
     if cliente:
-        # Get products for selected client
-        produtos = data[data['Cliente'] == cliente]['Produto'].unique()
+        # Get groups for selected client
+        grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
+        grupos = sorted(grupos, key=lambda x: str(x).lower())
         
-        # Create product selector with placeholder
-        produto = st.selectbox(
-            "Selecione o Produto",
-            produtos,
-            help="Escolha um produto para visualizar as vendas",
-            placeholder="Selecione um produto..."
+        # Create group selector with placeholder
+        grupo = st.selectbox(
+            "Selecione o Grupo",
+            grupos,
+            help="Escolha um grupo para visualizar as vendas",
+            placeholder="Selecione um grupo..."
         )
         
-        if produto:
-            # Show loading state
-            with st.spinner(f"Gerando previsão para {cliente} - {produto}..."):
-                # Make forecast
-                forecast_data, error = make_forecast(cliente, produto, data)
-                
-            if error:
-                st.error(error)
-            elif forecast_data is not None:
-                # Create and display plot
-                fig = create_plot(forecast_data, f"{cliente} - {produto}")
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+        if grupo:
+            # Get products for selected client and group
+            produtos = data[(data['Cliente'] == cliente) & (data['Grupo'] == grupo)]['Produto'].unique()
+            produtos = sorted(produtos, key=lambda x: str(x).lower())
+            produtos = ['Todos'] + list(produtos)
+            
+            # Create product selector with placeholder
+            produto = st.selectbox(
+                "Selecione o Produto",
+                produtos,
+                help="Escolha um produto para visualizar as vendas",
+                placeholder="Selecione um produto..."
+            )
+            
+            if produto:
+                # Show loading state
+                with st.spinner(f"Gerando previsão para {cliente} - {produto}..."):
+                    # Make forecast
+                    forecast_data, error = make_forecast(cliente, produto, grupo, data)
                     
-                    # Show summary statistics
-                    with st.expander("📊 Estatísticas"):
-                        st.write("Total histórico:", forecast_data[forecast_data['Previsao'] == 'Histórico']['Quantidade'].sum())
-                        st.write("Total previsto:", forecast_data[forecast_data['Previsao'] == 'Previsão']['Quantidade'].sum())
+                if error:
+                    st.error(error)
+                elif forecast_data is not None:
+                    # Create and display plot
+                    fig = create_plot(forecast_data, f"{cliente} - {grupo} - {produto}")
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Show summary statistics
+                        with st.expander("📊 Estatísticas"):
+                            historico = forecast_data[forecast_data['Previsao'] == 'Histórico']
+                            previsao = forecast_data[forecast_data['Previsao'] == 'Previsão']
+                            
+                            st.write("📊 Estatísticas Históricas:")
+                            st.write("- Total histórico:", historico['Quantidade'].sum())
+                            st.write("- Média mensal:", historico['Quantidade'].mean().round(2))
+                            st.write("- Mediana mensal:", historico['Quantidade'].median())
+                            st.write("- Desvio padrão:", historico['Quantidade'].std().round(2))
+                            
+                            st.write("\n📈 Estatísticas da Previsão:")
+                            st.write("- Total previsto:", previsao['Quantidade'].sum())
+                            st.write("- Média mensal prevista:", previsao['Quantidade'].mean().round(2))
+                            st.write("- Mediana prevista:", previsao['Quantidade'].median())
 
 if __name__ == "__main__":
     main()
