@@ -5,7 +5,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import logging
 
-# === Configurações ===
+# Configurações
 FORECAST_MONTHS = 6
 REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
@@ -127,7 +127,6 @@ def main():
     st.set_page_config(page_title="Painel de Vendas e Previsão", layout="wide")
     st.title("📊 Painel de Vendas e Previsão")
 
-    # Limpa cache ao iniciar (opcional, pode tirar se quiser manter)
     st.cache_data.clear()
 
     @st.cache_data
