@@ -55,6 +55,9 @@ def load_data():
         # Clean column names
         df.columns = df.columns.str.strip()
         
+        # Log das colunas do DataFrame original
+        st.write("Colunas do DataFrame original:", df.columns.tolist())
+        
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
         df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
@@ -72,8 +75,14 @@ def load_data():
         if 'Grupo' not in df.columns:
             df['Grupo'] = 'Todos'
         
+        # Log das colunas após adicionar Grupo
+        st.write("Colunas após adicionar Grupo:", df.columns.tolist())
+        
         # Group and sum quantities
-        df = df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
+        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
+        
+        # Log das colunas após o groupby
+        st.write("Colunas após groupby:", df.columns.tolist())
         
         return df
         
@@ -236,9 +245,13 @@ def main():
     
     if cliente:
         # Get groups for selected client
-        grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
-        grupos = sorted(grupos, key=lambda x: str(x).lower())
-        grupos = ['Todos'] + list(grupos)
+        try:
+            grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
+            grupos = sorted(grupos, key=lambda x: str(x).lower())
+            grupos = ['Todos'] + list(grupos)
+        except KeyError:
+            st.error("❌ Erro: Não foi possível encontrar grupos para este cliente. Colunas disponíveis: {', '.join(data.columns)}")
+            st.stop()
         
         # Create group selector with placeholder
         grupo = st.selectbox(
