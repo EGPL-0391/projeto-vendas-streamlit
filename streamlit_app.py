@@ -20,7 +20,6 @@ logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 def validate_data(df):
     """Valida a estrutura e qualidade dos dados."""
     required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
-    optional_columns = ['Grupo']
     
     missing_cols = [col for col in required_columns if col not in df.columns]
     if missing_cols:
@@ -28,11 +27,6 @@ def validate_data(df):
     
     if df.empty:
         raise ValueError("Dataframe is empty")
-    
-    # Se Grupo não existir, criamos uma coluna com valor padrão
-    if 'Grupo' not in df.columns:
-        df['Grupo'] = 'Todos'
-        st.warning("⚠️ Coluna 'Grupo' não encontrada. Usando 'Todos' como padrão.")
     
     return True
 
@@ -52,8 +46,8 @@ def load_data():
             
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
         
-        # Clean column names - convert to lowercase
-        df.columns = df.columns.str.strip().str.lower()
+        # Clean column names
+        df.columns = df.columns.str.strip()
         
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
@@ -69,7 +63,7 @@ def load_data():
         df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
         
         # Group and sum quantities
-        df = df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
+        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
         
         return df
         
@@ -77,30 +71,27 @@ def load_data():
         st.error(f"❌ Error loading data: {str(e)}")
         st.stop()
 
-def make_forecast(cliente, produto, grupo, data):
+def make_forecast(cliente, produto, data):
     """
     Gera previsão para um cliente e produto específicos.
     
     Args:
         cliente (str): Nome do cliente
         produto (str): Nome do produto
-        grupo (str): Nome do grupo
         data (pd.DataFrame): DataFrame com os dados de vendas
         
     Returns:
         tuple: (DataFrame com previsão, mensagem de erro)
     """
     try:
-        if not isinstance(cliente, str) or not isinstance(produto, str) or not isinstance(grupo, str):
-            return None, "❌ Cliente, produto e grupo devem ser strings"
+        if not isinstance(cliente, str) or not isinstance(produto, str):
+            return None, "❌ Cliente e produto devem ser strings"
             
         # Filter data for specific client and product
-        filtered = data[(data['Cliente'] == cliente) & 
-                      (data['Produto'] == produto if produto != 'Todos' else True) &
-                      (data['Grupo'] == grupo)].copy()
+        filtered = data[(data['Cliente'] == cliente) & (data['Produto'] == produto)].copy()
         
         if filtered.empty:
-            return None, f"❌ No data found for client: {cliente}, product: {produto}, group: {grupo}"
+            return None, f"❌ No data found for client: {cliente} and product: {produto}"
         
         # Sort by date
         filtered = filtered.sort_values('AnoMes')
@@ -134,8 +125,7 @@ def make_forecast(cliente, produto, grupo, data):
         forecast_df = forecast.reset_index()
         forecast_df.columns = ['AnoMes', 'Quantidade']
         forecast_df['Cliente'] = cliente
-        forecast_df['Produto'] = produto if produto != 'Todos' else 'Todos'
-        forecast_df['Grupo'] = grupo
+        forecast_df['Produto'] = produto
         forecast_df['Previsao'] = 'Previsão'
         
         # Combine historical and forecast data
@@ -231,62 +221,47 @@ def main():
     )
     
     if cliente:
-        # Get groups for selected client
-        grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
-        grupos = sorted(grupos, key=lambda x: str(x).lower())
-        grupos = ['Todos'] + list(grupos)
+        # Get products for selected client
+        produtos = data[data['Cliente'] == cliente]['Produto'].unique()
+        produtos = sorted(produtos, key=lambda x: str(x).lower())
         
-        # Create group selector with placeholder
-        grupo = st.selectbox(
-            "Selecione o Grupo",
-            grupos,
-            help="Escolha um grupo para visualizar as vendas",
-            placeholder="Selecione um grupo..."
+        # Create product selector with placeholder
+        produto = st.selectbox(
+            "Selecione o Produto",
+            produtos,
+            help="Escolha um produto para visualizar as vendas",
+            placeholder="Selecione um produto..."
         )
         
-        if grupo:
-            # Get products for selected client and group
-            produtos = data[(data['Cliente'] == cliente) & (data['Grupo'] == grupo)]['Produto'].unique()
-            produtos = sorted(produtos, key=lambda x: str(x).lower())
-            produtos = ['Todos'] + list(produtos)
-            
-            # Create product selector with placeholder
-            produto = st.selectbox(
-                "Selecione o Produto",
-                produtos,
-                help="Escolha um produto para visualizar as vendas",
-                placeholder="Selecione um produto..."
-            )
-            
-            if produto:
-                # Show loading state
-                with st.spinner(f"Gerando previsão para {cliente} - {produto}..."):
-                    # Make forecast
-                    forecast_data, error = make_forecast(cliente, produto, grupo, data)
+        if produto:
+            # Show loading state
+            with st.spinner(f"Gerando previsão para {cliente} - {produto}..."):
+                # Make forecast
+                forecast_data, error = make_forecast(cliente, produto, data)
+                
+            if error:
+                st.error(error)
+            elif forecast_data is not None:
+                # Create and display plot
+                fig = create_plot(forecast_data, f"{cliente} - {produto}")
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
                     
-                if error:
-                    st.error(error)
-                elif forecast_data is not None:
-                    # Create and display plot
-                    fig = create_plot(forecast_data, f"{cliente} - {grupo} - {produto}")
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                    # Show summary statistics
+                    with st.expander("📊 Estatísticas"):
+                        historico = forecast_data[forecast_data['Previsao'] == 'Histórico']
+                        previsao = forecast_data[forecast_data['Previsao'] == 'Previsão']
                         
-                        # Show summary statistics
-                        with st.expander("📊 Estatísticas"):
-                            historico = forecast_data[forecast_data['Previsao'] == 'Histórico']
-                            previsao = forecast_data[forecast_data['Previsao'] == 'Previsão']
-                            
-                            st.write("📊 Estatísticas Históricas:")
-                            st.write("- Total histórico:", historico['Quantidade'].sum())
-                            st.write("- Média mensal:", historico['Quantidade'].mean().round(2))
-                            st.write("- Mediana mensal:", historico['Quantidade'].median())
-                            st.write("- Desvio padrão:", historico['Quantidade'].std().round(2))
-                            
-                            st.write("\n📈 Estatísticas da Previsão:")
-                            st.write("- Total previsto:", previsao['Quantidade'].sum())
-                            st.write("- Média mensal prevista:", previsao['Quantidade'].mean().round(2))
-                            st.write("- Mediana prevista:", previsao['Quantidade'].median())
+                        st.write("📊 Estatísticas Históricas:")
+                        st.write("- Total histórico:", historico['Quantidade'].sum())
+                        st.write("- Média mensal:", historico['Quantidade'].mean().round(2))
+                        st.write("- Mediana mensal:", historico['Quantidade'].median())
+                        st.write("- Desvio padrão:", historico['Quantidade'].std().round(2))
+                        
+                        st.write("\n📈 Estatísticas da Previsão:")
+                        st.write("- Total previsto:", previsao['Quantidade'].sum())
+                        st.write("- Média mensal prevista:", previsao['Quantidade'].mean().round(2))
+                        st.write("- Mediana prevista:", previsao['Quantidade'].median())
 
 if __name__ == "__main__":
     main()
