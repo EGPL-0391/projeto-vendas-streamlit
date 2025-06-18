@@ -13,28 +13,31 @@ REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 CACHE_KEY = 'forecast_data'
 
-# Clear cache on app start
-st.cache_data.clear()
-
 # Configure logging
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
 # === Data Validation ===
 def validate_data(df):
     """Valida a estrutura e qualidade dos dados."""
+    st.write("\n=== Validação de Dados ===")
+    st.write("Colunas disponíveis:", df.columns.tolist())
+    
     required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
     
     # First check if the DataFrame is empty
     if df.empty:
-        raise ValueError("Dataframe is empty")
+        st.error("❌ Dataframe is empty")
+        return False
     
     # Get actual column names (in lowercase for case-insensitive comparison)
     actual_columns = df.columns.str.lower()
+    st.write("Colunas em lowercase:", actual_columns.tolist())
     
     # Check for required columns
     missing_cols = [col for col in required_columns if col.lower() not in actual_columns]
     if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}. Available columns: {', '.join(actual_columns)}")
+        st.error(f"❌ Missing required columns: {missing_cols}")
+        return False
     
     return True
 
@@ -44,18 +47,24 @@ def get_last_emission_date(data):
 
 def load_data():
     try:
+        st.write("=== Carregando Dados ===")
         # Get the directory where this script is located
         base_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
+        st.write(f"Caminho do arquivo: {file_path}")
         
         if not os.path.exists(file_path):
             st.error(f"❌ Error: Data file not found at {file_path}")
             st.stop()
             
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
+        st.write("\n=== Após Leitura do Excel ===")
+        st.write("Colunas originais:", df.columns.tolist())
         
         # Clean column names
         df.columns = df.columns.str.strip()
+        st.write("\n=== Após Limpeza de Nomes ===")
+        st.write("Colunas limpas:", df.columns.tolist())
         
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
@@ -72,6 +81,8 @@ def load_data():
         
         # Group and sum quantities
         df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
+        st.write("\n=== Após Agrupamento ===")
+        st.write("Colunas finais:", df.columns.tolist())
         
         return df
         
@@ -92,6 +103,9 @@ def make_forecast(cliente, produto, data):
         tuple: (DataFrame com previsão, mensagem de erro)
     """
     try:
+        st.write(f"\n=== Gerando Previsão para {cliente} - {produto} ===")
+        st.write("Colunas do DataFrame:", data.columns.tolist())
+        
         if not isinstance(cliente, str) or not isinstance(produto, str):
             return None, "❌ Cliente e produto devem ser strings"
             
@@ -155,40 +169,28 @@ def create_plot(df, title):
         plotly.graph_objs.Figure: Gráfico Plotly
     """
     try:
-        if df is None or df.empty:
-            return None
-            
         fig = px.line(
             df,
             x='AnoMes',
             y='Quantidade',
             color='Previsao',
             title=title,
-            markers=True,
-            color_discrete_map={
-                'Histórico': "#080808",
-                'Previsão': "#F10707"
-            },
-            template="plotly_white"
+            labels={
+                'AnoMes': 'Mês',
+                'Quantidade': 'Quantidade',
+                'Previsao': 'Tipo'
+            }
         )
         
-        # Style the forecast line
-        for trace in fig.data:
-            if 'Previsão' in trace.name:
-                trace.line.color = "#F10707"
-                trace.line.width = 4
-                trace.line.dash = 'dot'
-            else:
-                trace.line.width = 2
-        
-        # Add hover information
-        fig.update_traces(
-            hovertemplate='<b>Mês: %{x}</b><br>'
-                         'Quantidade: %{y}<br>'
-                         '<extra></extra>'
+        fig.update_layout(
+            xaxis_title='Mês',
+            yaxis_title='Quantidade',
+            legend_title='Tipo',
+            hovermode='x unified'
         )
         
         return fig
+        
     except Exception as e:
         st.error(f"❌ Error creating plot: {str(e)}")
         return None
@@ -196,6 +198,9 @@ def create_plot(df, title):
 def main():
     st.set_page_config(page_title="Vendas e Previsão", layout="wide")
     st.title("Painel de Vendas e Previsão")
+    
+    # Clear cache on app start
+    st.cache_data.clear()
     
     # Load data with caching
     @st.cache_data
@@ -210,16 +215,16 @@ def main():
         st.stop()
     
     # Validate data
-    try:
-        validate_data(data)
-    except ValueError as e:
-        st.error(f"❌ Erro: {str(e)}")
+    if not validate_data(data):
         st.stop()
     
     # Get unique clients
     try:
         clientes = data['Cliente'].astype(str).unique()
         clientes = sorted(clientes, key=lambda x: str(x).lower())
+        st.write("\n=== Clientes Disponíveis ===")
+        st.write("Quantidade de clientes:", len(clientes))
+        
     except KeyError as e:
         st.error(f"❌ Erro: Coluna 'Cliente' não encontrada nos dados. Colunas disponíveis: {', '.join(map(str, data.columns))}")
         st.stop()
@@ -236,10 +241,17 @@ def main():
     )
     
     if cliente:
-        # Get products for selected client
-        produtos = data[data['Cliente'] == cliente]['Produto'].unique()
-        produtos = sorted(produtos, key=lambda x: str(x).lower())
-        
+        try:
+            # Get products for selected client
+            produtos = data[data['Cliente'] == cliente]['Produto'].unique()
+            produtos = sorted(produtos, key=lambda x: str(x).lower())
+            st.write(f"\n=== Produtos para {cliente} ===")
+            st.write("Quantidade de produtos:", len(produtos))
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao buscar produtos: {str(e)}")
+            st.stop()
+            
         # Create product selector with placeholder
         produto = st.selectbox(
             "Selecione o Produto",
