@@ -13,6 +13,9 @@ REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 CACHE_KEY = 'forecast_data'
 
+# Clear cache on app start
+st.cache_data.clear()
+
 # Configure logging
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
@@ -21,12 +24,17 @@ def validate_data(df):
     """Valida a estrutura e qualidade dos dados."""
     required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
     
-    missing_cols = [col for col in required_columns if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}")
-    
+    # First check if the DataFrame is empty
     if df.empty:
         raise ValueError("Dataframe is empty")
+    
+    # Get actual column names (in lowercase for case-insensitive comparison)
+    actual_columns = df.columns.str.lower()
+    
+    # Check for required columns
+    missing_cols = [col for col in required_columns if col.lower() not in actual_columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}. Available columns: {', '.join(actual_columns)}")
     
     return True
 
@@ -199,6 +207,13 @@ def main():
     
     if data is None or data.empty:
         st.error("❌ Não foi possível carregar os dados")
+        st.stop()
+    
+    # Validate data
+    try:
+        validate_data(data)
+    except ValueError as e:
+        st.error(f"❌ Erro: {str(e)}")
         st.stop()
     
     # Get unique clients
