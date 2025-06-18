@@ -16,14 +16,18 @@ logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 # === Validação dos dados ===
 def validate_data(df):
     required_columns = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
-    if df.empty:
-        st.error("❌ O DataFrame está vazio.")
+    
+    if df is None or df.empty:
+        st.error("❌ O DataFrame está vazio ou não foi carregado.")
         return False
+
     actual_columns = df.columns.str.lower()
     missing_cols = [col for col in required_columns if col.lower() not in actual_columns]
+    
     if missing_cols:
         st.error(f"❌ Colunas obrigatórias ausentes: {missing_cols}")
         return False
+
     return True
 
 # === Carrega e prepara os dados ===
@@ -46,11 +50,11 @@ def load_data():
         df = df.dropna(subset=['Emissao', 'Cliente', 'Produto', 'Quantidade'])
         df = df[df['Emissao'] >= MIN_DATE]
 
-        df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
-        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
-
         if df.empty:
             raise ValueError("❌ Nenhum dado restante após filtragem.")
+
+        df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
+        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
 
         return df
 
@@ -67,7 +71,8 @@ def make_forecast(cliente, produto, data):
         filtered = data[(data['Cliente'] == cliente) & (data['Produto'] == produto)].copy()
 
         if filtered.empty:
-            return None, f"❌ Não há dados para cliente '{cliente}' e produto '{produto}'."
+            available_cols = ', '.join(data.columns) if hasattr(data, 'columns') else 'nenhuma'
+            return None, f"❌ Não foi possível encontrar dados para o cliente '{cliente}' e produto '{produto}'. Colunas disponíveis: {available_cols}"
 
         filtered = filtered.sort_values('AnoMes')
         filtered['Previsao'] = 'Histórico'
@@ -128,7 +133,12 @@ def main():
     if not validate_data(data):
         st.stop()
 
-    clientes = sorted(data['Cliente'].unique())
+    try:
+        clientes = sorted(data['Cliente'].unique())
+    except Exception as e:
+        st.error(f"❌ Erro ao acessar clientes: {str(e)}")
+        st.stop()
+
     cliente = st.selectbox("Selecione o Cliente", clientes, help="Escolha um cliente")
 
     if cliente:
