@@ -52,11 +52,8 @@ def load_data():
             
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype={'Cliente': str, 'Produto': str})
         
-        # Clean column names
-        df.columns = df.columns.str.strip()
-        
-        # Log das colunas do DataFrame original
-        st.write("Colunas do DataFrame original:", df.columns.tolist())
+        # Clean column names - convert to lowercase
+        df.columns = df.columns.str.strip().str.lower()
         
         # Convert date column and drop missing values
         df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
@@ -71,18 +68,8 @@ def load_data():
         # Create month column
         df['AnoMes'] = df['Emissao'].dt.to_period('M').dt.to_timestamp()
         
-        # Add Grupo column if it doesn't exist
-        if 'Grupo' not in df.columns:
-            df['Grupo'] = 'Todos'
-        
-        # Log das colunas após adicionar Grupo
-        st.write("Colunas após adicionar Grupo:", df.columns.tolist())
-        
         # Group and sum quantities
-        df = df.groupby(['Cliente', 'Produto', 'AnoMes'])['Quantidade'].sum().reset_index()
-        
-        # Log das colunas após o groupby
-        st.write("Colunas após groupby:", df.columns.tolist())
+        df = df.groupby(['Cliente', 'Produto', 'Grupo', 'AnoMes'])['Quantidade'].sum().reset_index()
         
         return df
         
@@ -245,13 +232,9 @@ def main():
     
     if cliente:
         # Get groups for selected client
-        try:
-            grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
-            grupos = sorted(grupos, key=lambda x: str(x).lower())
-            grupos = ['Todos'] + list(grupos)
-        except KeyError:
-            st.error("❌ Erro: Não foi possível encontrar grupos para este cliente. Colunas disponíveis: {', '.join(data.columns)}")
-            st.stop()
+        grupos = data[data['Cliente'] == cliente]['Grupo'].unique()
+        grupos = sorted(grupos, key=lambda x: str(x).lower())
+        grupos = ['Todos'] + list(grupos)
         
         # Create group selector with placeholder
         grupo = st.selectbox(
