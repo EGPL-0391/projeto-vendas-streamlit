@@ -48,6 +48,10 @@ def load_data():
 
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype=str)
         df.columns = df.columns.str.strip()
+        
+        # Renomear a coluna 'I' para 'Grupo'
+        if 'I' in df.columns:
+            df.rename(columns={'I': 'Grupo'}, inplace=True)
 
         # Mapeamento de colunas obrigatórias
         cols_map = {}
@@ -180,6 +184,7 @@ def main():
     )
 
     # Seleção de grupo
+    grupos = sorted(data['Grupo'].unique())
     selected_group = st.selectbox(
         "Selecione o grupo",
         ['Todos'] + grupos
@@ -195,13 +200,21 @@ def main():
     # Filtrar dados com base nas seleções
     filtered_data = data.copy()
     if selected_group != 'Todos':
-        filtered_data = filtered_data[filtered_data['Produto'].str.split('-').str[0] == selected_group]
+        filtered_data = filtered_data[filtered_data['Grupo'] == selected_group]
 
-        if filtered_data.empty:
-            st.warning("Nenhum dado encontrado com os filtros selecionados.")
-            return
+    if filtered_data.empty:
+        st.warning("Nenhum dado encontrado com os filtros selecionados.")
+        return
 
-        # Se 'Todos' foi selecionado, gerar previsões para todos os produtos
+    # Se 'Todos' foi selecionado, gerar previsões para todos os produtos
+    if produto == 'Todos':
+        if cliente == 'Todos':
+            # Gerar previsões para todos os clientes e produtos
+            for cli in sorted(data['Cliente'].unique()):
+                produtos_cli = sorted(data[data['Cliente'] == cli]['Produto'].unique())
+                for prod in produtos_cli:
+                    with st.spinner(f"GERANDO PREVISÃO PARA {cli} - {prod}..."):
+                        forecast_data, error = make_forecast(cli, prod, data)
         if produto == 'Todos':
             if cliente == 'Todos':
                 # Gerar previsões para todos os clientes e produtos
