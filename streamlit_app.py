@@ -138,7 +138,15 @@ def create_plot(df, title):
             title=title.upper(),
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
-        fig.update_layout(xaxis_title='MÊS', yaxis_title='QUANTIDADE', hovermode='x unified')
+        fig.update_traces(
+            line=dict(color='black') if 'HISTÓRICO' in df['Previsao'].values else {},
+            line=dict(color='red') if 'PREVISÃO' in df['Previsao'].values else {}
+        )
+        fig.update_layout(
+            xaxis_title='MÊS',
+            yaxis_title='QUANTIDADE',
+            hovermode='x unified'
+        )
         return fig
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
@@ -158,20 +166,66 @@ def main():
     if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade']):
         st.stop()
 
+    # Opções de seleção de clientes
+    st.sidebar.header("FILTROS")
     clientes = sorted(data['Cliente'].unique())
-    cliente = st.selectbox("SELECIONE O CLIENTE", clientes)
+    grupos = sorted(data['Produto'].str.split('-').str[0].unique())
+    
+    # Seleção de clientes
+    select_all_clients = st.sidebar.checkbox("Selecionar todos os clientes")
+    if select_all_clients:
+        selected_clients = clientes
+    else:
+        selected_clients = st.sidebar.multiselect(
+            "Selecione os clientes",
+            clientes,
+            default=[]
+        )
 
-    if cliente:
-        produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-        if not produtos:
-            st.error(f"❌ Cliente '{cliente}' não possui produtos.")
-            st.stop()
+    # Seleção de grupos
+    select_all_groups = st.sidebar.checkbox("Selecionar todos os grupos")
+    if select_all_groups:
+        selected_groups = grupos
+    else:
+        selected_groups = st.sidebar.multiselect(
+            "Selecione os grupos",
+            grupos,
+            default=[]
+        )
 
-        produto = st.selectbox("SELECIONE O PRODUTO", produtos)
+    # Seleção de produtos
+    if selected_clients:
+        produtos = sorted(data[data['Cliente'].isin(selected_clients)]['Produto'].unique())
+        select_all_products = st.sidebar.checkbox("Selecionar todos os produtos")
+        if select_all_products:
+            selected_products = produtos
+        else:
+            selected_products = st.sidebar.multiselect(
+                "Selecione os produtos",
+                produtos,
+                default=[]
+            )
 
-        if produto:
-            with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
-                forecast_data, error = make_forecast(cliente, produto, data)
+    if not selected_clients or not selected_products:
+        st.warning("Por favor, selecione pelo menos um cliente e um produto.")
+        return
+
+    # Filtrar dados com base nas seleções
+    filtered_data = data[
+        (data['Cliente'].isin(selected_clients)) & 
+        (data['Produto'].isin(selected_products))
+    ]
+
+    if filtered_data.empty:
+        st.warning("Nenhum dado encontrado com os filtros selecionados.")
+        return
+
+    # Agrupar dados por cliente e produto
+    grouped = filtered_data.groupby(['Cliente', 'Produto'])
+    
+    for (cliente, produto), group in grouped:
+        with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
+            forecast_data, error = make_forecast(cliente, produto, data)
 
             if error:
                 st.error(error)
