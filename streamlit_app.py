@@ -173,12 +173,13 @@ def main():
     grupos = sorted(data['Produto'].str.split('-').str[0].unique())
     
     # Seleção de cliente
+    clientes = ['Todos'] + sorted(data['Cliente'].unique())
     cliente = st.selectbox(
         "Selecione o cliente",
         clientes
     )
 
-    if cliente:
+    if cliente != 'Todos':
         # Seleção de grupo
         selected_group = st.selectbox(
             "Selecione o grupo",
@@ -186,14 +187,20 @@ def main():
         )
 
         # Seleção de produto
-        produtos = ['Todos'] + sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+        if cliente == 'Todos':
+            produtos = ['Todos'] + sorted(data['Produto'].unique())
+        else:
+            produtos = ['Todos'] + sorted(data[data['Cliente'] == cliente]['Produto'].unique())
         produto = st.selectbox(
             "Selecione o produto",
             produtos
         )
 
         # Filtrar dados com base nas seleções
-        filtered_data = data[data['Cliente'] == cliente]
+        if cliente == 'Todos':
+            filtered_data = data.copy()
+        else:
+            filtered_data = data[data['Cliente'] == cliente]
         if selected_group != 'Todos':
             filtered_data = filtered_data[filtered_data['Produto'].str.split('-').str[0] == selected_group]
 
@@ -203,16 +210,31 @@ def main():
 
         # Se 'Todos' foi selecionado, gerar previsões para todos os produtos
         if produto == 'Todos':
-            produtos_cliente = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-            for prod in produtos_cliente:
-                with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {prod}..."):
-                    forecast_data, error = make_forecast(cliente, prod, data)
-                    if error:
-                        st.error(error)
-                    if forecast_data is not None:
-                        fig = create_plot(forecast_data, f"{cliente} - {prod}")
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
+            if cliente == 'Todos':
+                # Gerar previsões para todos os clientes e produtos
+                for cli in sorted(data['Cliente'].unique()):
+                    produtos_cli = sorted(data[data['Cliente'] == cli]['Produto'].unique())
+                    for prod in produtos_cli:
+                        with st.spinner(f"GERANDO PREVISÃO PARA {cli} - {prod}..."):
+                            forecast_data, error = make_forecast(cli, prod, data)
+                            if error:
+                                st.error(error)
+                            if forecast_data is not None:
+                                fig = create_plot(forecast_data, f"{cli} - {prod}")
+                                if fig:
+                                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                # Gerar previsões apenas para o cliente selecionado
+                produtos_cliente = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+                for prod in produtos_cliente:
+                    with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {prod}..."):
+                        forecast_data, error = make_forecast(cliente, prod, data)
+                        if error:
+                            st.error(error)
+                        if forecast_data is not None:
+                            fig = create_plot(forecast_data, f"{cliente} - {prod}")
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
         else:
             with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
                 forecast_data, error = make_forecast(cliente, produto, data)
