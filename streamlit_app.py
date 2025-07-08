@@ -179,30 +179,23 @@ def main():
         clientes
     )
 
-    if cliente != 'Todos':
-        # Seleção de grupo
-        selected_group = st.selectbox(
-            "Selecione o grupo",
-            ['Todos'] + grupos
-        )
+    # Seleção de grupo
+    selected_group = st.selectbox(
+        "Selecione o grupo",
+        ['Todos'] + grupos
+    )
 
-        # Seleção de produto
-        if cliente == 'Todos':
-            produtos = ['Todos'] + sorted(data['Produto'].unique())
-        else:
-            produtos = ['Todos'] + sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-        produto = st.selectbox(
-            "Selecione o produto",
-            produtos
-        )
+    # Seleção de produto
+    produtos = ['Todos'] + sorted(data['Produto'].unique())
+    produto = st.selectbox(
+        "Selecione o produto",
+        produtos
+    )
 
-        # Filtrar dados com base nas seleções
-        if cliente == 'Todos':
-            filtered_data = data.copy()
-        else:
-            filtered_data = data[data['Cliente'] == cliente]
-        if selected_group != 'Todos':
-            filtered_data = filtered_data[filtered_data['Produto'].str.split('-').str[0] == selected_group]
+    # Filtrar dados com base nas seleções
+    filtered_data = data.copy()
+    if selected_group != 'Todos':
+        filtered_data = filtered_data[filtered_data['Produto'].str.split('-').str[0] == selected_group]
 
         if filtered_data.empty:
             st.warning("Nenhum dado encontrado com os filtros selecionados.")
