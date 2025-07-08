@@ -138,10 +138,11 @@ def create_plot(df, title):
             title=title.upper(),
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
-        fig.update_traces(
-            line=dict(color='black') if 'HISTÓRICO' in df['Previsao'].values else {},
-            line=dict(color='red') if 'PREVISÃO' in df['Previsao'].values else {}
-        )
+        # Define colors for each trace
+        colors = {'HISTÓRICO': 'black', 'PREVISÃO': 'red'}
+        for trace in fig.data:
+            trace.line.color = colors.get(trace.name, 'black')
+        
         fig.update_layout(
             xaxis_title='MÊS',
             yaxis_title='QUANTIDADE',
