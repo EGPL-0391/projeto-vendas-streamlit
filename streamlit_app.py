@@ -186,7 +186,7 @@ def main():
         )
 
         # Seleção de produto
-        produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+        produtos = ['Todos'] + sorted(data[data['Cliente'] == cliente]['Produto'].unique())
         produto = st.selectbox(
             "Selecione o produto",
             produtos
@@ -201,8 +201,27 @@ def main():
             st.warning("Nenhum dado encontrado com os filtros selecionados.")
             return
 
-        with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
-            forecast_data, error = make_forecast(cliente, produto, data)
+        # Se 'Todos' foi selecionado, gerar previsões para todos os produtos
+        if produto == 'Todos':
+            produtos_cliente = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+            for prod in produtos_cliente:
+                with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {prod}..."):
+                    forecast_data, error = make_forecast(cliente, prod, data)
+                    if error:
+                        st.error(error)
+                    if forecast_data is not None:
+                        fig = create_plot(forecast_data, f"{cliente} - {prod}")
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+        else:
+            with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
+                forecast_data, error = make_forecast(cliente, produto, data)
+                if error:
+                    st.error(error)
+                if forecast_data is not None:
+                    fig = create_plot(forecast_data, f"{cliente} - {produto}")
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
 
             if error:
                 st.error(error)
