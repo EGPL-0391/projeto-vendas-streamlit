@@ -55,7 +55,14 @@ def load_data():
 
         # Mapeamento de colunas obrigatórias
         cols_map = {}
-        for col in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
+        required_cols = ['Emissao', 'Cliente', 'Produto', 'Quantidade', 'Grupo']
+        
+        # Primeiro renomear a coluna 'I' para 'Grupo' se existir
+        if 'I' in df.columns:
+            df.rename(columns={'I': 'Grupo'}, inplace=True)
+            
+        # Mapear as colunas
+        for col in required_cols:
             found_col = find_column(df, col)
             if not found_col:
                 st.error(f"❌ Coluna obrigatória '{col}' não encontrada.")
