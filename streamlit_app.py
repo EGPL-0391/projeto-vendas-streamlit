@@ -167,64 +167,40 @@ def main():
     if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade']):
         st.stop()
 
-    # Opções de seleção de clientes
+    # Opções de seleção
     st.sidebar.header("FILTROS")
     clientes = sorted(data['Cliente'].unique())
     grupos = sorted(data['Produto'].str.split('-').str[0].unique())
     
-    # Seleção de clientes
-    select_all_clients = st.sidebar.checkbox("Selecionar todos os clientes")
-    if select_all_clients:
-        selected_clients = clientes
-    else:
-        selected_clients = st.sidebar.multiselect(
-            "Selecione os clientes",
-            clientes,
-            default=[]
+    # Seleção de cliente
+    cliente = st.selectbox(
+        "Selecione o cliente",
+        clientes
+    )
+
+    if cliente:
+        # Seleção de grupo
+        selected_group = st.selectbox(
+            "Selecione o grupo",
+            ['Todos'] + grupos
         )
 
-    # Seleção de grupos
-    select_all_groups = st.sidebar.checkbox("Selecionar todos os grupos")
-    if select_all_groups:
-        selected_groups = grupos
-    else:
-        selected_groups = st.sidebar.multiselect(
-            "Selecione os grupos",
-            grupos,
-            default=[]
+        # Seleção de produto
+        produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+        produto = st.selectbox(
+            "Selecione o produto",
+            produtos
         )
 
-    # Seleção de produtos
-    if selected_clients:
-        produtos = sorted(data[data['Cliente'].isin(selected_clients)]['Produto'].unique())
-        select_all_products = st.sidebar.checkbox("Selecionar todos os produtos")
-        if select_all_products:
-            selected_products = produtos
-        else:
-            selected_products = st.sidebar.multiselect(
-                "Selecione os produtos",
-                produtos,
-                default=[]
-            )
+        # Filtrar dados com base nas seleções
+        filtered_data = data[data['Cliente'] == cliente]
+        if selected_group != 'Todos':
+            filtered_data = filtered_data[filtered_data['Produto'].str.split('-').str[0] == selected_group]
 
-    if not selected_clients or not selected_products:
-        st.warning("Por favor, selecione pelo menos um cliente e um produto.")
-        return
+        if filtered_data.empty:
+            st.warning("Nenhum dado encontrado com os filtros selecionados.")
+            return
 
-    # Filtrar dados com base nas seleções
-    filtered_data = data[
-        (data['Cliente'].isin(selected_clients)) & 
-        (data['Produto'].isin(selected_products))
-    ]
-
-    if filtered_data.empty:
-        st.warning("Nenhum dado encontrado com os filtros selecionados.")
-        return
-
-    # Agrupar dados por cliente e produto
-    grouped = filtered_data.groupby(['Cliente', 'Produto'])
-    
-    for (cliente, produto), group in grouped:
         with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
             forecast_data, error = make_forecast(cliente, produto, data)
 
