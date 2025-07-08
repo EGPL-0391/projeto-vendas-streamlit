@@ -49,17 +49,14 @@ def load_data():
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype=str)
         df.columns = df.columns.str.strip()
         
-        # Renomear a coluna 'I' para 'Grupo'
-        if 'I' in df.columns:
-            df.rename(columns={'I': 'Grupo'}, inplace=True)
-
-        # Mapeamento de colunas obrigatórias
+        # Mapear as colunas
         cols_map = {}
-        required_cols = ['Emissao', 'Cliente', 'Produto', 'Quantidade', 'Grupo']
+        required_cols = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
         
         # Primeiro renomear a coluna 'I' para 'Grupo' se existir
         if 'I' in df.columns:
             df.rename(columns={'I': 'Grupo'}, inplace=True)
+            required_cols.append('Grupo')
             
         # Mapear as colunas
         for col in required_cols:
@@ -68,6 +65,15 @@ def load_data():
                 st.error(f"❌ Coluna obrigatória '{col}' não encontrada.")
                 st.stop()
             cols_map[col] = found_col
+            
+        # Renomear colunas para nomes padrão
+        df.rename(columns=cols_map, inplace=True)
+        
+        # Tratamento e padronização
+        df['Cliente'] = df['Cliente'].astype(str).str.strip().str.upper()
+        df['Produto'] = df['Produto'].astype(str).str.strip().str.upper()
+        df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
+        df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce')
 
         # Tratamento e padronização
         df[cols_map['Cliente']] = df[cols_map['Cliente']].astype(str).str.strip().str.upper()
@@ -181,7 +187,7 @@ def main():
     # Opções de seleção
     st.sidebar.header("FILTROS")
     clientes = sorted(data['Cliente'].unique())
-    grupos = sorted(data['Produto'].str.split('-').str[0].unique())
+    grupos = sorted(data['Grupo'].unique())
     
     # Seleção de cliente
     clientes = ['Todos'] + sorted(data['Cliente'].unique())
@@ -191,7 +197,6 @@ def main():
     )
 
     # Seleção de grupo
-    grupos = sorted(data['Grupo'].unique())
     selected_group = st.selectbox(
         "Selecione o grupo",
         ['Todos'] + grupos
@@ -207,7 +212,10 @@ def main():
     # Filtrar dados com base nas seleções
     filtered_data = data.copy()
     if selected_group != 'Todos':
-        filtered_data = filtered_data[filtered_data['Grupo'] == selected_group]
+        if 'Grupo' in filtered_data.columns:
+            filtered_data = filtered_data[filtered_data['Grupo'] == selected_group]
+        else:
+            st.warning("Nenhum grupo disponível para filtragem.")
 
     if filtered_data.empty:
         st.warning("Nenhum dado encontrado com os filtros selecionados.")
