@@ -48,32 +48,15 @@ def load_data():
 
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype=str)
         df.columns = df.columns.str.strip()
-        
-        # Mapear as colunas
+
+        # Mapeamento de colunas obrigatórias
         cols_map = {}
-        required_cols = ['Emissao', 'Cliente', 'Produto', 'Quantidade']
-        
-        # Primeiro renomear a coluna 'I' para 'Grupo' se existir
-        if 'I' in df.columns:
-            df.rename(columns={'I': 'Grupo'}, inplace=True)
-            required_cols.append('Grupo')
-            
-        # Mapear as colunas
-        for col in required_cols:
+        for col in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
             found_col = find_column(df, col)
             if not found_col:
                 st.error(f"❌ Coluna obrigatória '{col}' não encontrada.")
                 st.stop()
             cols_map[col] = found_col
-            
-        # Renomear colunas para nomes padrão
-        df.rename(columns=cols_map, inplace=True)
-        
-        # Tratamento e padronização
-        df['Cliente'] = df['Cliente'].astype(str).str.strip().str.upper()
-        df['Produto'] = df['Produto'].astype(str).str.strip().str.upper()
-        df['Emissao'] = pd.to_datetime(df['Emissao'], errors='coerce')
-        df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce')
 
         # Tratamento e padronização
         df[cols_map['Cliente']] = df[cols_map['Cliente']].astype(str).str.strip().str.upper()
@@ -155,16 +138,7 @@ def create_plot(df, title):
             title=title.upper(),
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
-        # Define colors for each trace
-        colors = {'HISTÓRICO': 'black', 'PREVISÃO': 'red'}
-        for trace in fig.data:
-            trace.line.color = colors.get(trace.name, 'black')
-        
-        fig.update_layout(
-            xaxis_title='MÊS',
-            yaxis_title='QUANTIDADE',
-            hovermode='x unified'
-        )
+        fig.update_layout(xaxis_title='MÊS', yaxis_title='QUANTIDADE', hovermode='x unified')
         return fig
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
@@ -184,93 +158,20 @@ def main():
     if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade']):
         st.stop()
 
-    # Opções de seleção
-    st.sidebar.header("FILTROS")
     clientes = sorted(data['Cliente'].unique())
-    
-    # Seleção de cliente
-    clientes = ['Todos'] + sorted(data['Cliente'].unique())
-    cliente = st.selectbox(
-        "Selecione o cliente",
-        clientes
-    )
+    cliente = st.selectbox("SELECIONE O CLIENTE", clientes)
 
-    # Seleção de grupo
-    if 'Grupo' in data.columns:
-        grupos = sorted(data['Grupo'].unique())
-        selected_group = st.selectbox(
-            "Selecione o grupo",
-            ['Todos'] + grupos
-        )
-        
-        # Filtrar por grupo se selecionado
-        if selected_group != 'Todos':
-            data = data[data['Grupo'] == selected_group]
-    else:
-        st.warning("Nenhum grupo disponível na base de dados")
+    if cliente:
+        produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+        if not produtos:
+            st.error(f"❌ Cliente '{cliente}' não possui produtos.")
+            st.stop()
 
-    # Seleção de produto
-    produtos = ['Todos'] + sorted(data['Produto'].unique())
-    produto = st.selectbox(
-        "Selecione o produto",
-        produtos
-    )
+        produto = st.selectbox("SELECIONE O PRODUTO", produtos)
 
-    # Filtrar dados com base nas seleções
-    filtered_data = data.copy()
-
-    # Filtrar por produto
-    if produto != 'Todos':
-        filtered_data = filtered_data[filtered_data['Produto'] == produto]
-
-    if filtered_data.empty:
-        st.warning("Nenhum dado encontrado com os filtros selecionados.")
-        return
-
-    # Se 'Todos' foi selecionado, gerar previsões para todos os produtos
-    if produto == 'Todos':
-        if cliente == 'Todos':
-            # Gerar previsões para todos os clientes e produtos
-            for cli in sorted(data['Cliente'].unique()):
-                produtos_cli = sorted(data[data['Cliente'] == cli]['Produto'].unique())
-                for prod in produtos_cli:
-                    with st.spinner(f"GERANDO PREVISÃO PARA {cli} - {prod}..."):
-                        forecast_data, error = make_forecast(cli, prod, data)
-        if produto == 'Todos':
-            if cliente == 'Todos':
-                # Gerar previsões para todos os clientes e produtos
-                for cli in sorted(data['Cliente'].unique()):
-                    produtos_cli = sorted(data[data['Cliente'] == cli]['Produto'].unique())
-                    for prod in produtos_cli:
-                        with st.spinner(f"GERANDO PREVISÃO PARA {cli} - {prod}..."):
-                            forecast_data, error = make_forecast(cli, prod, data)
-                            if error:
-                                st.error(error)
-                            if forecast_data is not None:
-                                fig = create_plot(forecast_data, f"{cli} - {prod}")
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                # Gerar previsões apenas para o cliente selecionado
-                produtos_cliente = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-                for prod in produtos_cliente:
-                    with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {prod}..."):
-                        forecast_data, error = make_forecast(cliente, prod, data)
-                        if error:
-                            st.error(error)
-                        if forecast_data is not None:
-                            fig = create_plot(forecast_data, f"{cliente} - {prod}")
-                            if fig:
-                                st.plotly_chart(fig, use_container_width=True)
-        else:
+        if produto:
             with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
                 forecast_data, error = make_forecast(cliente, produto, data)
-                if error:
-                    st.error(error)
-                if forecast_data is not None:
-                    fig = create_plot(forecast_data, f"{cliente} - {produto}")
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
 
             if error:
                 st.error(error)
