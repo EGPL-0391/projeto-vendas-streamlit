@@ -187,7 +187,6 @@ def main():
     # Opções de seleção
     st.sidebar.header("FILTROS")
     clientes = sorted(data['Cliente'].unique())
-    grupos = sorted(data['Grupo'].unique())
     
     # Seleção de cliente
     clientes = ['Todos'] + sorted(data['Cliente'].unique())
@@ -197,10 +196,18 @@ def main():
     )
 
     # Seleção de grupo
-    selected_group = st.selectbox(
-        "Selecione o grupo",
-        ['Todos'] + grupos
-    )
+    if 'Grupo' in data.columns:
+        grupos = sorted(data['Grupo'].unique())
+        selected_group = st.selectbox(
+            "Selecione o grupo",
+            ['Todos'] + grupos
+        )
+        
+        # Filtrar por grupo se selecionado
+        if selected_group != 'Todos':
+            data = data[data['Grupo'] == selected_group]
+    else:
+        st.warning("Nenhum grupo disponível na base de dados")
 
     # Seleção de produto
     produtos = ['Todos'] + sorted(data['Produto'].unique())
@@ -211,11 +218,10 @@ def main():
 
     # Filtrar dados com base nas seleções
     filtered_data = data.copy()
-    if selected_group != 'Todos':
-        if 'Grupo' in filtered_data.columns:
-            filtered_data = filtered_data[filtered_data['Grupo'] == selected_group]
-        else:
-            st.warning("Nenhum grupo disponível para filtragem.")
+
+    # Filtrar por produto
+    if produto != 'Todos':
+        filtered_data = filtered_data[filtered_data['Produto'] == produto]
 
     if filtered_data.empty:
         st.warning("Nenhum dado encontrado com os filtros selecionados.")
