@@ -94,7 +94,7 @@ def create_plot(df, title):
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
 
-        # Cores personalizadas
+        # Cores: histórico (preto), previsão (vermelho)
         fig.for_each_trace(
             lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
         )
@@ -105,13 +105,13 @@ def create_plot(df, title):
 
             xaxis=dict(
                 title='<b>MÊS</b>',
-                tickfont=dict(size=12, family='Arial', color='black', weight='bold'),
-                titlefont=dict(size=14, family='Arial', color='black')
+                title_font=dict(size=14, color='black'),
+                tickfont=dict(size=12, color='black')
             ),
             yaxis=dict(
                 title='<b>QUANTIDADE</b>',
-                tickfont=dict(size=12, family='Arial', color='black', weight='bold'),
-                titlefont=dict(size=14, family='Arial', color='black')
+                title_font=dict(size=14, color='black'),
+                tickfont=dict(size=12, color='black')
             )
         )
 
