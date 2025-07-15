@@ -225,3 +225,4 @@ def main():
                         st.write("- MEDIANA:", previsao['Quantidade'].median())
 
 if __name__ == "__main__":
+    main()
