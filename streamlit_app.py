@@ -90,20 +90,29 @@ def create_plot(df, title):
             y='Quantidade',
             color='Previsao',
             title=title.upper(),
-            markers=True,  # Adiciona os pontos
+            markers=True,
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
 
-        # Cores personalizadas: histórico preto, previsão vermelho
+        # Cores personalizadas
         fig.for_each_trace(
             lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
         )
 
         fig.update_layout(
-            xaxis_title='<b>MÊS</b>',
-            yaxis_title='<b>QUANTIDADE</b>',
-            hovermode='x unified',
             title_x=0.5,
+            hovermode='x unified',
+
+            xaxis=dict(
+                title='<b>MÊS</b>',
+                tickfont=dict(size=12, family='Arial', color='black', weight='bold'),
+                titlefont=dict(size=14, family='Arial', color='black')
+            ),
+            yaxis=dict(
+                title='<b>QUANTIDADE</b>',
+                tickfont=dict(size=12, family='Arial', color='black', weight='bold'),
+                titlefont=dict(size=14, family='Arial', color='black')
+            )
         )
 
         return fig
