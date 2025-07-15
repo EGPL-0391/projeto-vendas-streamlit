@@ -78,7 +78,6 @@ def load_data():
             cols_map['Quantidade']: 'Quantidade'
         }, inplace=True)
 
-        # Mapeamento do Grupo
         grupo_col = find_column(df, 'Grupo')
         if grupo_col:
             df_grouped['Grupo'] = df[[cols_map['Cliente']]].merge(
@@ -95,47 +94,28 @@ def load_data():
         st.error(f"❌ Erro ao carregar dados: {str(e)}")
         st.stop()
 
-def make_forecast(cliente, produto, data):
-    try:
-        cliente = cliente.strip().upper()
-        produto = produto.strip().upper()
+def make_forecast_from_series(serie):
+    model = ExponentialSmoothing(
+        serie,
+        trend='add',
+        damped_trend=True,
+        seasonal=None,
+        initialization_method='estimated'
+    ).fit()
 
-        filtered = data[(data['Cliente'] == cliente) & (data['Produto'] == produto)].copy()
-        if filtered.empty:
-            return None, f"❌ Nenhum dado para cliente '{cliente}' e produto '{produto}'."
+    forecast_index = pd.date_range(
+        start=serie.index[-1] + pd.offsets.MonthBegin(),
+        periods=FORECAST_MONTHS,
+        freq='MS'
+    )
 
-        filtered = filtered.sort_values('AnoMes')
-        filtered['Previsao'] = 'HISTÓRICO'
-        serie = filtered.set_index('AnoMes')['Quantidade']
+    forecast = (model.forecast(FORECAST_MONTHS) * REDUCTION_FACTOR).round().astype(int)
+    forecast.index = forecast_index
 
-        model = ExponentialSmoothing(
-            serie,
-            trend='add',
-            damped_trend=True,
-            seasonal=None,
-            initialization_method='estimated'
-        ).fit()
-
-        forecast_index = pd.date_range(
-            start=serie.index[-1] + pd.offsets.MonthBegin(),
-            periods=FORECAST_MONTHS,
-            freq='MS'
-        )
-
-        forecast = (model.forecast(FORECAST_MONTHS) * REDUCTION_FACTOR).round().astype(int)
-        forecast.index = forecast_index
-
-        forecast_df = forecast.reset_index()
-        forecast_df.columns = ['AnoMes', 'Quantidade']
-        forecast_df['Cliente'] = cliente
-        forecast_df['Produto'] = produto
-        forecast_df['Previsao'] = 'PREVISÃO'
-
-        result = pd.concat([filtered, forecast_df], ignore_index=True)
-        return result, None
-
-    except Exception as e:
-        return None, f"❌ Erro ao gerar previsão: {str(e)}"
+    forecast_df = forecast.reset_index()
+    forecast_df.columns = ['AnoMes', 'Quantidade']
+    forecast_df['Previsao'] = 'PREVISÃO'
+    return forecast_df
 
 def create_plot(df, title):
     try:
@@ -167,62 +147,70 @@ def main():
     if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade', 'Grupo']):
         st.stop()
 
+    # === FILTROS ===
     grupos = sorted(data['Grupo'].unique())
     grupo_selecionado = st.selectbox("SELECIONE O GRUPO", ["TODOS"] + grupos)
 
+    data_f = data.copy()
     if grupo_selecionado != "TODOS":
-        data = data[data['Grupo'] == grupo_selecionado]
+        data_f = data_f[data_f['Grupo'] == grupo_selecionado]
 
-    clientes = sorted(data['Cliente'].unique())
+    clientes = sorted(data_f['Cliente'].unique())
     cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + clientes)
 
-    if cliente:
-        if cliente == "TODOS":
-            produtos = sorted(data['Produto'].unique())
-        else:
-            produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
+    if cliente != "TODOS":
+        data_f = data_f[data_f['Cliente'] == cliente]
 
-        produto = st.selectbox("SELECIONE O PRODUTO", produtos)
+    produtos = sorted(data_f['Produto'].unique())
+    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + produtos)
 
-        if produto:
-            if cliente == "TODOS":
-                st.info("🔄 Gerando previsão para todos os clientes do grupo selecionado.")
-                for cli in sorted(data[data['Produto'] == produto]['Cliente'].unique()):
-                    with st.spinner(f"🔮 {cli} - {produto}"):
-                        forecast_data, error = make_forecast(cli, produto, data)
-                        if error:
-                            st.warning(error)
-                            continue
-                        fig = create_plot(forecast_data, f"{cli} - {produto}")
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-            else:
-                with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
-                    forecast_data, error = make_forecast(cliente, produto, data)
+    if produto != "TODOS":
+        data_f = data_f[data_f['Produto'] == produto]
 
-                if error:
-                    st.error(error)
-                    return
+    if data_f.empty:
+        st.warning("⚠️ Nenhum dado disponível com os filtros selecionados.")
+        return
 
-                if forecast_data is not None:
-                    fig = create_plot(forecast_data, f"{cliente} - {produto}")
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+    # === AGRUPAMENTO E PREVISÃO ===
+    data_agrupada = data_f.groupby('AnoMes')['Quantidade'].sum().reset_index()
+    data_agrupada['Previsao'] = 'HISTÓRICO'
 
-                    with st.expander("📈 ESTATÍSTICAS"):
-                        historico = forecast_data[forecast_data['Previsao'] == 'HISTÓRICO']
-                        previsao = forecast_data[forecast_data['Previsao'] == 'PREVISÃO']
+    try:
+        serie = data_agrupada.set_index('AnoMes')['Quantidade'].sort_index()
+        forecast_df = make_forecast_from_series(serie)
+        result = pd.concat([data_agrupada, forecast_df], ignore_index=True)
 
-                        st.write("📊 HISTÓRICO:")
-                        st.write("- TOTAL:", historico['Quantidade'].sum())
-                        st.write("- MÉDIA MENSAL:", historico['Quantidade'].mean().round(2))
-                        st.write("- MEDIANA:", historico['Quantidade'].median())
-                        st.write("- DESVIO PADRÃO:", historico['Quantidade'].std().round(2))
+        titulo = "PREVISÃO CONSOLIDADA"
+        if cliente != "TODOS" and produto != "TODOS":
+            titulo = f"{cliente} - {produto}"
+        elif cliente != "TODOS":
+            titulo = f"{cliente} - TODOS OS PRODUTOS"
+        elif produto != "TODOS":
+            titulo = f"CLIENTES - {produto}"
+        elif grupo_selecionado != "TODOS":
+            titulo = f"GRUPO {grupo_selecionado} - CONSOLIDADO"
 
-                        st.write("📈 PREVISÃO:")
-                        st.write("- TOTAL:", previsao['Quantidade'].sum())
-                        st.write("- MÉDIA MENSAL:", previsao['Quantidade'].mean().round(2))
-                        st.write("- MEDIANA:", previsao['Quantidade'].median())
+        fig = create_plot(result, titulo)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("📈 ESTATÍSTICAS"):
+            historico = result[result['Previsao'] == 'HISTÓRICO']
+            previsao = result[result['Previsao'] == 'PREVISÃO']
+
+            st.write("📊 HISTÓRICO:")
+            st.write("- TOTAL:", historico['Quantidade'].sum())
+            st.write("- MÉDIA MENSAL:", historico['Quantidade'].mean().round(2))
+            st.write("- MEDIANA:", historico['Quantidade'].median())
+            st.write("- DESVIO PADRÃO:", historico['Quantidade'].std().round(2))
+
+            st.write("📈 PREVISÃO:")
+            st.write("- TOTAL:", previsao['Quantidade'].sum())
+            st.write("- MÉDIA MENSAL:", previsao['Quantidade'].mean().round(2))
+            st.write("- MEDIANA:", previsao['Quantidade'].median())
+
+    except Exception as e:
+        st.error(f"❌ Erro ao gerar previsão consolidada: {str(e)}")
 
 if __name__ == "__main__":
     main()
