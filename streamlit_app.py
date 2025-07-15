@@ -123,7 +123,7 @@ def main():
     if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
         st.stop()
 
-    grupo = st.selectbox("SELECIONE O GRUPO", ["TODOS"] + sorted(df['Grupo'].unique()))
+    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
     cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
