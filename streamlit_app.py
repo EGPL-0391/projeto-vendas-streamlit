@@ -49,7 +49,6 @@ def load_data():
         df = pd.read_excel(file_path, sheet_name='Base vendas', dtype=str)
         df.columns = df.columns.str.strip()
 
-        # Mapeamento de colunas obrigatórias
         cols_map = {}
         for col in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
             found_col = find_column(df, col)
@@ -58,7 +57,6 @@ def load_data():
                 st.stop()
             cols_map[col] = found_col
 
-        # Tratamento e padronização
         df[cols_map['Cliente']] = df[cols_map['Cliente']].astype(str).str.strip().str.upper()
         df[cols_map['Produto']] = df[cols_map['Produto']].astype(str).str.strip().str.upper()
         df[cols_map['Emissao']] = pd.to_datetime(df[cols_map['Emissao']], errors='coerce')
@@ -79,6 +77,17 @@ def load_data():
             cols_map['Produto']: 'Produto',
             cols_map['Quantidade']: 'Quantidade'
         }, inplace=True)
+
+        # Mapeamento do Grupo
+        grupo_col = find_column(df, 'Grupo')
+        if grupo_col:
+            df_grouped['Grupo'] = df[[cols_map['Cliente']]].merge(
+                df[[cols_map['Cliente'], grupo_col]].drop_duplicates(),
+                on=cols_map['Cliente'],
+                how='left'
+            )[grupo_col].fillna('SEM GRUPO').str.upper()
+        else:
+            df_grouped['Grupo'] = 'SEM GRUPO'
 
         return df_grouped
 
@@ -155,47 +164,64 @@ def main():
     with st.spinner("CARREGANDO DADOS..."):
         data = get_data()
 
-    if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade']):
+    if not validate_data(data, ['Cliente', 'Produto', 'AnoMes', 'Quantidade', 'Grupo']):
         st.stop()
 
+    grupos = sorted(data['Grupo'].unique())
+    grupo_selecionado = st.selectbox("SELECIONE O GRUPO", ["TODOS"] + grupos)
+
+    if grupo_selecionado != "TODOS":
+        data = data[data['Grupo'] == grupo_selecionado]
+
     clientes = sorted(data['Cliente'].unique())
-    cliente = st.selectbox("SELECIONE O CLIENTE", clientes)
+    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + clientes)
 
     if cliente:
-        produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-        if not produtos:
-            st.error(f"❌ Cliente '{cliente}' não possui produtos.")
-            st.stop()
+        if cliente == "TODOS":
+            produtos = sorted(data['Produto'].unique())
+        else:
+            produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
 
         produto = st.selectbox("SELECIONE O PRODUTO", produtos)
 
         if produto:
-            with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
-                forecast_data, error = make_forecast(cliente, produto, data)
+            if cliente == "TODOS":
+                st.info("🔄 Gerando previsão para todos os clientes do grupo selecionado.")
+                for cli in sorted(data[data['Produto'] == produto]['Cliente'].unique()):
+                    with st.spinner(f"🔮 {cli} - {produto}"):
+                        forecast_data, error = make_forecast(cli, produto, data)
+                        if error:
+                            st.warning(error)
+                            continue
+                        fig = create_plot(forecast_data, f"{cli} - {produto}")
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+            else:
+                with st.spinner(f"GERANDO PREVISÃO PARA {cliente} - {produto}..."):
+                    forecast_data, error = make_forecast(cliente, produto, data)
 
-            if error:
-                st.error(error)
-                return
+                if error:
+                    st.error(error)
+                    return
 
-            if forecast_data is not None:
-                fig = create_plot(forecast_data, f"{cliente} - {produto}")
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+                if forecast_data is not None:
+                    fig = create_plot(forecast_data, f"{cliente} - {produto}")
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
 
-                with st.expander("📈 ESTATÍSTICAS"):
-                    historico = forecast_data[forecast_data['Previsao'] == 'HISTÓRICO']
-                    previsao = forecast_data[forecast_data['Previsao'] == 'PREVISÃO']
+                    with st.expander("📈 ESTATÍSTICAS"):
+                        historico = forecast_data[forecast_data['Previsao'] == 'HISTÓRICO']
+                        previsao = forecast_data[forecast_data['Previsao'] == 'PREVISÃO']
 
-                    st.write("📊 HISTÓRICO:")
-                    st.write("- TOTAL:", historico['Quantidade'].sum())
-                    st.write("- MÉDIA MENSAL:", historico['Quantidade'].mean().round(2))
-                    st.write("- MEDIANA:", historico['Quantidade'].median())
-                    st.write("- DESVIO PADRÃO:", historico['Quantidade'].std().round(2))
+                        st.write("📊 HISTÓRICO:")
+                        st.write("- TOTAL:", historico['Quantidade'].sum())
+                        st.write("- MÉDIA MENSAL:", historico['Quantidade'].mean().round(2))
+                        st.write("- MEDIANA:", historico['Quantidade'].median())
+                        st.write("- DESVIO PADRÃO:", historico['Quantidade'].std().round(2))
 
-                    st.write("📈 PREVISÃO:")
-                    st.write("- TOTAL:", previsao['Quantidade'].sum())
-                    st.write("- MÉDIA MENSAL:", previsao['Quantidade'].mean().round(2))
-                    st.write("- MEDIANA:", previsao['Quantidade'].median())
+                        st.write("📈 PREVISÃO:")
+                        st.write("- TOTAL:", previsao['Quantidade'].sum())
+                        st.write("- MÉDIA MENSAL:", previsao['Quantidade'].mean().round(2))
+                        st.write("- MEDIANA:", previsao['Quantidade'].median())
 
 if __name__ == "__main__":
-    main()
