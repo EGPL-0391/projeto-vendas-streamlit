@@ -83,10 +83,33 @@ def make_forecast_from_series(serie):
     return df
 
 def create_plot(df, title):
-    fig = px.line(df, x='AnoMes', y='Quantidade', color='Previsao', title=title,
-                  labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'})
-    fig.update_layout(xaxis_title='MÊS', yaxis_title='QUANTIDADE', hovermode='x unified')
-    return fig
+    try:
+        fig = px.line(
+            df,
+            x='AnoMes',
+            y='Quantidade',
+            color='Previsao',
+            title=title.upper(),
+            markers=True,  # Adiciona os pontos
+            labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
+        )
+
+        # Cores personalizadas: histórico preto, previsão vermelho
+        fig.for_each_trace(
+            lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
+        )
+
+        fig.update_layout(
+            xaxis_title='<b>MÊS</b>',
+            yaxis_title='<b>QUANTIDADE</b>',
+            hovermode='x unified',
+            title_x=0.5,
+        )
+
+        return fig
+    except Exception as e:
+        st.error(f"❌ Erro ao criar gráfico: {str(e)}")
+        return None
 
 def main():
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
@@ -100,7 +123,6 @@ def main():
     if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
         st.stop()
 
-    # == FILTROS CADEIA ==
     grupo = st.selectbox("SELECIONE O GRUPO", ["TODOS"] + sorted(df['Grupo'].unique()))
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
@@ -114,7 +136,6 @@ def main():
         st.warning("⚠️ Nenhum dado com os filtros aplicados.")
         return
 
-    # == AGRUPAMENTO HISTÓRICO E PREVISÃO ==
     grouped = dff.groupby('AnoMes', as_index=False)['Quantidade'].sum()
     grouped['Previsao'] = 'HISTÓRICO'
     serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
@@ -126,26 +147,46 @@ def main():
         st.error(f"❌ Erro na previsão: {e}")
         return
 
-    # == TÍTULO INTELIGENTE ==
-    if grupo!="TODOS" and cliente=="TODOS" and produto=="TODOS":
+    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
         titulo = f"GRUPO {grupo} - CONSOLIDADO"
-    elif cliente!="TODOS" and produto=="TODOS":
+    elif cliente != "TODOS" and produto == "TODOS":
         titulo = f"{cliente} - TODOS OS PRODUTOS"
-    elif cliente=="TODOS" and produto!="TODOS":
+    elif cliente == "TODOS" and produto != "TODOS":
         titulo = f"TODOS OS CLIENTES - {produto}"
-    elif cliente!="TODOS" and produto!="TODOS":
+    elif cliente != "TODOS" and produto != "TODOS":
         titulo = f"{cliente} - {produto}"
     else:
         titulo = "PREVISÃO TOTAL"
 
-    # == GRÁFICO E ESTATÍSTICAS ==
+    st.markdown(f"### 📌 {titulo}")
+
     fig = create_plot(resultado, titulo)
     st.plotly_chart(fig, use_container_width=True)
-    with st.expander("📈 ESTATÍSTICAS"):
-        h = resultado[resultado['Previsao']=='HISTÓRICO']['Quantidade']
-        p = resultado[resultado['Previsao']=='PREVISÃO']['Quantidade']
-        st.write("📊 HISTÓRICO: total =", h.sum(), "| média =", round(h.mean(),2), "| mediana =", h.median(), "| desvio =", round(h.std(),2))
-        st.write("📈 PREVISÃO: total =", p.sum(), "| média =", round(p.mean(),2), "| mediana =", p.median())
+
+    st.divider()
+
+    with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
+        historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
+        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
+
+        st.subheader("📊 HISTÓRICO")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total", f"{historico.sum():,.0f}")
+        col2.metric("Média", f"{historico.mean():.2f}")
+        col3.metric("Mediana", f"{historico.median():.0f}")
+        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
+
+        st.markdown("")
+
+        st.subheader("📈 PREVISÃO")
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
+        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
+        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
+        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
+
+        st.markdown("")
+        st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
 
 if __name__ == "__main__":
     main()
