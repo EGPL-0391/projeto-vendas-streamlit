@@ -5,6 +5,10 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import unicodedata
 import logging
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente
+load_dotenv()
 
 # === Configurações ===
 FORECAST_MONTHS = 6
@@ -12,6 +16,27 @@ REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
+# Função de autenticação
+def login():
+    st.title("Autenticação")
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type="password")
+    
+    correct_username = os.getenv("USERNAME")
+    correct_password = os.getenv("PASSWORD")
+    
+    if username == correct_username and password == correct_password:
+        st.success("Login bem-sucedido!")
+        return True
+    elif username and password:
+        st.error("Usuário ou senha incorretos.")
+    return False
+
+# Bloquear a execução do painel sem login
+if not login():
+    st.stop()  # Interrompe a execução se o login falhar
+
+# Função para remover acentos
 def remove_acentos(text):
     if not isinstance(text, str):
         return text
@@ -35,8 +60,9 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
+    base_dir = "C:\\Users\\guilherme.lopes\\OneDrive - Cadiveu\\Documentos\\GitHub\\projeto-vendas-streamlit\\data"  # Caminho absoluto
+    path = os.path.join(base_dir, 'base_vendas_24.xlsx')
+    
     if not os.path.exists(path):
         st.error(f"❌ Arquivo não encontrado: {path}")
         st.stop()
@@ -163,7 +189,7 @@ def main():
     elif cliente == "TODOS" and produto != "TODOS":
         titulo = f"TODOS OS CLIENTES - {produto}"
     elif cliente != "TODOS" and produto != "TODOS":
-        titulo = f"{cliente} - {produto}"
+        titulo = f"{cliente} - {produto}"  # CORREÇÃO AQUI!
     else:
         titulo = "PREVISÃO TOTAL"
 
@@ -182,20 +208,3 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total", f"{historico.sum():,.0f}")
         col2.metric("Média", f"{historico.mean():.2f}")
-        col3.metric("Mediana", f"{historico.median():.0f}")
-        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
-
-        st.markdown("")
-
-        st.subheader("📈 PREVISÃO")
-        col5, col6, col7, col8 = st.columns(4)
-        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
-        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
-        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
-        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
-
-        st.markdown("")
-        st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
-
-if __name__ == "__main__":
-    main()
