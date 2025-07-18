@@ -29,8 +29,9 @@ def login():
     username = st.text_input("USUÁRIO")
     password = st.text_input("SENHA", type="password")
     
-    correct_username = os.getenv("abc")
-    correct_password = os.getenv("123")
+    # Hardcoded credentials for testing
+    correct_username = "admin"
+    correct_password = "admin123"
     
     if username == correct_username and password == correct_password:
         st.success("Login bem-sucedido!")
