@@ -44,6 +44,8 @@ def login():
 if not login():
     st.stop()  # Interrompe a execução se o login falhar
 
+main()  # Chama a função principal após login bem-sucedido
+
 # Função para remover acentos
 def remove_acentos(text):
     if not isinstance(text, str):
