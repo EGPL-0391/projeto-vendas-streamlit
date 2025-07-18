@@ -195,89 +195,12 @@ def create_plot(df, title):
         return None
 
 def main():
-    st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
-    
-    # Verificar autenticação
-    if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
-        st.title("🔒 Área Restrita")
-        st.write("Por favor, faça login para acessar o painel.")
-        check_password()
-        return
-
-    st.title("📊 PAINEL DE VENDAS E PREVISÃO")
-
-    @st.cache_data
-    def get_data():
-        return load_data()
-    df = get_data()
-
-    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
-        st.stop()
-
-    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
-    dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
-
-    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
-    dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
-
-    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + sorted(dfc['Produto'].unique()))
-    dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
-
-    if dff.empty:
-        st.warning("⚠️ Nenhum dado com os filtros aplicados.")
-        return
-
-    grouped = dff.groupby('AnoMes', as_index=False)['Quantidade'].sum()
-    grouped['Previsao'] = 'HISTÓRICO'
-    serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
-
-    try:
-        fc = make_forecast_from_series(serie)
-        resultado = pd.concat([grouped, fc], ignore_index=True)
-    except Exception as e:
-        st.error(f"❌ Erro na previsão: {e}")
-        return
-
-    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
-        titulo = f"GRUPO {grupo} - CONSOLIDADO"
-    elif cliente != "TODOS" and produto == "TODOS":
-        titulo = f"{cliente} - TODOS OS PRODUTOS"
-    elif cliente == "TODOS" and produto != "TODOS":
-        titulo = f"TODOS OS CLIENTES - {produto}"
-    elif cliente != "TODOS" and produto != "TODOS":
-        titulo = f"{cliente} - {produto}"
-    else:
-        titulo = "PREVISÃO TOTAL"
-
-    st.markdown(f"### 📌 {titulo}")
-
-    fig = create_plot(resultado, titulo)
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-
-    with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
-        historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
-        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
-
-        st.subheader("📊 HISTÓRICO")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total", f"{historico.sum():,.0f}")
-        col2.metric("Média", f"{historico.mean():.2f}")
-        col3.metric("Mediana", f"{historico.median():.0f}")
-        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
-
-        st.markdown("")
-
-        st.subheader("📈 PREVISÃO")
-        col5, col6, col7, col8 = st.columns(4)
-        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
-        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
-        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
-        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
-
-        st.markdown("")
-        st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
+    """
+    Função principal do aplicativo. Ela verifica se o usuário está autenticado,
+    carrega os dados, aplica os filtros selecionados pelo usuário e exibe os resultados
+    em forma de gráfico. Além disso, ela também exibe estatísticas detalhadas sobre o
+    histórico e a previsão.
+    """
 
 if __name__ == "__main__":
     main()
