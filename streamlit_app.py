@@ -129,11 +129,21 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    base_dir = "C:\\Users\\guilherme.lopes\\OneDrive - Cadiveu\\Documentos\\GitHub\\projeto-vendas-streamlit\\data"  # Caminho absoluto
+    base_dir = "data"  # Diretório relativo
+    
+    # Criar diretório se não existir
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+        
     path = os.path.join(base_dir, 'base_vendas_24.xlsx')
     
     if not os.path.exists(path):
-        st.error(f"❌ Arquivo não encontrado: {path}")
+        st.error("❌ Arquivo de dados não encontrado!")
+        st.write("""
+        1. Certifique-se de que você tem o arquivo base_vendas_24.xlsx com seus dados
+        2. Coloque o arquivo na pasta data do projeto
+        3. O arquivo deve ter as colunas: Cliente, Produto, Quantidade, Emissao
+        """)
         st.stop()
 
     df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
