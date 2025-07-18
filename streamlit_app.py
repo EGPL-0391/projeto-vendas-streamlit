@@ -10,9 +10,12 @@ from dotenv import load_dotenv
 # Carregar variáveis de ambiente
 load_dotenv()
 
-# Checando se as variáveis foram carregadas corretamente
-st.write(f"Username: {os.getenv('abc')}")
-st.write(f"Password: {os.getenv('123')}")
+# Checando se as variáveis estão carregadas corretamente
+username = os.getenv("abc")
+password = os.getenv("123")
+
+st.write(f"Username: {username}")  # Deveria exibir 'seu_usuario'
+st.write(f"Password: {password}")  # Deveria exibir 'sua_senha'
 
 # === Configurações ===
 FORECAST_MONTHS = 6
