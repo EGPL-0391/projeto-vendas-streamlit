@@ -5,12 +5,80 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import unicodedata
 import logging
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente
+load_dotenv()
 
 # === Configurações ===
 FORECAST_MONTHS = 6
 REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
+
+# === Função de Autenticação ===
+def check_password():
+    """Função para verificar login e senha"""
+    st.sidebar.markdown("# 🔐 Autenticação")
+    username = st.sidebar.text_input("Usuário", type="default")
+    password = st.sidebar.text_input("Senha", type="password")
+    
+    if st.sidebar.button("Entrar"):
+        if username == os.getenv("APP_USERNAME") and password == os.getenv("APP_PASSWORD"):
+            st.sidebar.success("✅ Login realizado com sucesso!")
+            st.session_state['authenticated'] = True
+        else:
+            st.sidebar.error("❌ Usuário ou senha incorretos")
+    
+    # Se já autenticado, mostrar botão de logout
+    if 'authenticated' in st.session_state and st.session_state['authenticated']:
+        if st.sidebar.button("Sair"):
+            del st.session_state['authenticated']
+            st.rerun()
+
+# === Função para carregar dados ===
+def load_data():
+    if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
+        st.error("❌ Acesso não autorizado. Por favor, faça login.")
+        st.stop()
+
+    data_path = os.getenv("DATA_PATH")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, data_path)
+    
+    if not os.path.exists(path):
+        st.error(f"❌ Arquivo não encontrado: {path}")
+        st.stop()
+
+    try:
+        df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
+        df.columns = df.columns.str.strip()
+        cols = {}
+        for c in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
+            fc = find_column(df, c)
+            if not fc:
+                st.error(f"❌ Coluna obrigatória '{c}' não encontrada.")
+                st.stop()
+            cols[c] = fc
+
+        df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
+        df = df[df[cols['Emissao']] >= pd.to_datetime(MIN_DATE)]
+        if df.empty:
+            st.error("❌ Nenhum dado após filtragem por data.")
+            st.stop()
+
+        df['AnoMes'] = df[cols['Emissao']].dt.to_period('M').dt.to_timestamp()
+
+        grupo_col = find_column(df, 'Grupo')
+        if grupo_col:
+            df['Grupo'] = df[grupo_col].astype(str).str.strip().str.upper()
+        else:
+            df['Grupo'] = 'SEM GRUPO'
+
+        return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados: {str(e)}")
+        st.stop()
 
 def remove_acentos(text):
     if not isinstance(text, str):
@@ -33,44 +101,6 @@ def validate_data(df, required_cols):
         st.error("❌ DataFrame vazio após limpeza.")
         return False
     return True
-
-def load_data():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
-    if not os.path.exists(path):
-        st.error(f"❌ Arquivo não encontrado: {path}")
-        st.stop()
-
-    df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
-    df.columns = df.columns.str.strip()
-    cols = {}
-    for c in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
-        fc = find_column(df, c)
-        if not fc:
-            st.error(f"❌ Coluna obrigatória '{c}' não encontrada.")
-            st.stop()
-        cols[c] = fc
-
-    df[cols['Cliente']] = df[cols['Cliente']].astype(str).str.strip().str.upper()
-    df[cols['Produto']] = df[cols['Produto']].astype(str).str.strip().str.upper()
-    df[cols['Emissao']] = pd.to_datetime(df[cols['Emissao']], errors='coerce')
-    df[cols['Quantidade']] = pd.to_numeric(df[cols['Quantidade']], errors='coerce')
-
-    df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
-    df = df[df[cols['Emissao']] >= pd.to_datetime(MIN_DATE)]
-    if df.empty:
-        st.error("❌ Nenhum dado após filtragem por data.")
-        st.stop()
-
-    df['AnoMes'] = df[cols['Emissao']].dt.to_period('M').dt.to_timestamp()
-
-    grupo_col = find_column(df, 'Grupo')
-    if grupo_col:
-        df['Grupo'] = df[grupo_col].astype(str).str.strip().str.upper()
-    else:
-        df['Grupo'] = 'SEM GRUPO'
-
-    return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
 
 def make_forecast_from_series(serie):
     m = ExponentialSmoothing(serie, trend='add', damped_trend=True, seasonal=None, initialization_method='estimated').fit()
@@ -122,6 +152,14 @@ def create_plot(df, title):
 
 def main():
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
+    
+    # Verificar autenticação
+    if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
+        st.title("🔒 Área Restrita")
+        st.write("Por favor, faça login para acessar o painel.")
+        check_password()
+        return
+
     st.title("📊 PAINEL DE VENDAS E PREVISÃO")
 
     @st.cache_data
