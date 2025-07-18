@@ -129,9 +129,8 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Caminho relativo ao diretório atual
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(current_dir, 'data', 'base_vendas_24.xlsx')
+    # Caminho no ambiente de container
+    path = "/mount/src/projeto-vendas-streamlit/data/base_vendas_24.xlsx"
     
     # Debug: Mostrar caminho completo e verificar se a pasta existe
     st.write(f"Caminho completo do arquivo: {path}")
