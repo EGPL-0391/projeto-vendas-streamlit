@@ -129,19 +129,15 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    base_dir = "data"  # Diretório relativo
-    
-    # Criar diretório se não existir
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-        
-    path = os.path.join(base_dir, 'base_vendas_24.xlsx')
+    # Use o caminho absoluto do arquivo
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
     
     if not os.path.exists(path):
         st.error("❌ Arquivo de dados não encontrado!")
-        st.write("""
+        st.write(f"""
         1. Certifique-se de que você tem o arquivo base_vendas_24.xlsx com seus dados
-        2. Coloque o arquivo na pasta data do projeto
+        2. O arquivo deve estar em: {path}
         3. O arquivo deve ter as colunas: Cliente, Produto, Quantidade, Emissao
         """)
         st.stop()
