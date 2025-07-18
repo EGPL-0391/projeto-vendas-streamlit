@@ -5,17 +5,6 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import unicodedata
 import logging
-from dotenv import load_dotenv
-
-# Carregar variáveis de ambiente
-load_dotenv()
-
-# Checando se as variáveis estão carregadas corretamente
-username = os.getenv("abc")
-password = os.getenv("123")
-
-st.write(f"Username: {username}")  # Deveria exibir 'seu_usuario'
-st.write(f"Password: {password}")  # Deveria exibir 'sua_senha'
 
 # === Configurações ===
 FORECAST_MONTHS = 6
@@ -23,93 +12,10 @@ REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
-# Função de autenticação
-def login():
-    st.title("Autenticação")
-    username = st.text_input("USUÁRIO")
-    password = st.text_input("SENHA", type="password")
-    
-    # Credenciais hardcoded para testes
-    correct_username = "admin"
-    correct_password = "admin123"
-    
-    if username == correct_username and password == correct_password:
-        st.success("Login bem-sucedido!")
-        return True
-    elif username and password:
-        st.error("Usuário ou senha incorretos.")
-    return False
-
-# Função para remover acentos
 def remove_acentos(text):
     if not isinstance(text, str):
         return text
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn').strip().lower()
-
-# Função principal que inclui a interface principal
-def main():
-    # Configuração da página e título
-    st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
-    st.title("📊 PAINEL DE VENDAS E PREVISÃO")
-
-    # Carregar dados
-    df = load_data()
-
-    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
-        st.stop()
-
-    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
-    dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
-
-    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
-    dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
-
-    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + sorted(dfc['Produto'].unique()))
-    dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
-
-    if dff.empty:
-        st.warning("⚠️ Nenhum dado com os filtros aplicados.")
-        return
-
-    grouped = dff.groupby('AnoMes', as_index=False)['Quantidade'].sum()
-    grouped['Previsao'] = 'HISTÓRICO'
-    serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
-
-    try:
-        fc = make_forecast_from_series(serie)
-        resultado = pd.concat([grouped, fc], ignore_index=True)
-    except Exception as e:
-        st.error(f"❌ Erro na previsão: {e}")
-        return
-
-    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
-        titulo = f"GRUPO {grupo} - CONSOLIDADO"
-    elif cliente != "TODOS" and produto == "TODOS":
-        titulo = f"{cliente} - TODOS OS PRODUTOS"
-    elif cliente == "TODOS" and produto != "TODOS":
-        titulo = f"TODOS OS CLIENTES - {produto}"
-    elif cliente != "TODOS" and produto != "TODOS":
-        titulo = f"{cliente} - {produto}"
-    else:
-        titulo = "PREVISÃO TOTAL"
-
-    st.markdown(f"### 📌 {titulo}")
-
-    fig = create_plot(resultado, titulo)
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-
-    with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
-        historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
-        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
-
-        st.subheader("📊 HISTÓRICO")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total", f"{historico.sum():,.0f}")
-        col2.metric("Média", f"{historico.mean():.2f}")
-        col3.metric("Desvio Padrão", f"{historico.std():.2f}")
-        col4.metric("Total", f"{historico.sum():,.0f}")
 
 def find_column(df, target):
     target_norm = remove_acentos(target)
@@ -129,22 +35,10 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Caminho relativo do arquivo
-    base_dir = os.path.dirname(os.path.abspath(__file__))  # Diretório onde o script está localizado
-    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')  # Caminho relativo até o arquivo
-
-    # Debug: Mostrar caminho completo e verificar se a pasta e arquivo existem
-    st.write(f"Caminho completo do arquivo: {path}")
-    st.write(f"Pasta existe: {os.path.exists(os.path.dirname(path))}")
-    st.write(f"Arquivo existe: {os.path.exists(path)}")
-    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
     if not os.path.exists(path):
-        st.error("❌ Arquivo de dados não encontrado!")
-        st.write(f"""
-        1. Certifique-se de que você tem o arquivo base_vendas_24.xlsx com seus dados
-        2. O arquivo deve estar em: {os.path.dirname(path)}
-        3. O arquivo deve ter as colunas: Cliente, Produto, Quantidade, Emissao
-        """)
+        st.error(f"❌ Arquivo não encontrado: {path}")
         st.stop()
 
     df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
@@ -208,6 +102,7 @@ def create_plot(df, title):
         fig.update_layout(
             title_x=0.5,
             hovermode='x unified',
+
             xaxis=dict(
                 title='<b>MÊS</b>',
                 title_font=dict(size=14, color='black'),
@@ -224,3 +119,83 @@ def create_plot(df, title):
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
+
+def main():
+    st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
+    st.title("📊 PAINEL DE VENDAS E PREVISÃO")
+
+    @st.cache_data
+    def get_data():
+        return load_data()
+    df = get_data()
+
+    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
+        st.stop()
+
+    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
+    dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
+
+    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
+    dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
+
+    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + sorted(dfc['Produto'].unique()))
+    dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
+
+    if dff.empty:
+        st.warning("⚠️ Nenhum dado com os filtros aplicados.")
+        return
+
+    grouped = dff.groupby('AnoMes', as_index=False)['Quantidade'].sum()
+    grouped['Previsao'] = 'HISTÓRICO'
+    serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
+
+    try:
+        fc = make_forecast_from_series(serie)
+        resultado = pd.concat([grouped, fc], ignore_index=True)
+    except Exception as e:
+        st.error(f"❌ Erro na previsão: {e}")
+        return
+
+    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
+        titulo = f"GRUPO {grupo} - CONSOLIDADO"
+    elif cliente != "TODOS" and produto == "TODOS":
+        titulo = f"{cliente} - TODOS OS PRODUTOS"
+    elif cliente == "TODOS" and produto != "TODOS":
+        titulo = f"TODOS OS CLIENTES - {produto}"
+    elif cliente != "TODOS" and produto != "TODOS":
+        titulo = f"{cliente} - {produto}"
+    else:
+        titulo = "PREVISÃO TOTAL"
+
+    st.markdown(f"### 📌 {titulo}")
+
+    fig = create_plot(resultado, titulo)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
+        historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
+        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
+
+        st.subheader("📊 HISTÓRICO")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total", f"{historico.sum():,.0f}")
+        col2.metric("Média", f"{historico.mean():.2f}")
+        col3.metric("Mediana", f"{historico.median():.0f}")
+        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
+
+        st.markdown("")
+
+        st.subheader("📈 PREVISÃO")
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
+        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
+        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
+        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
+
+        st.markdown("")
+        st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
+
+if __name__ == "__main__":
+    main()
