@@ -130,7 +130,7 @@ def validate_data(df, required_cols):
 
 def load_data():
     # Caminho no ambiente de container
-    path = "/mount/src/projeto-vendas-streamlit/data/base_vendas_24.xlsx"
+    path = "./data/base_vendas_24.xlsx"
     
     # Debug: Mostrar caminho completo e verificar se a pasta existe
     st.write(f"Caminho completo do arquivo: {path}")
