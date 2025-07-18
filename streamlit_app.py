@@ -29,7 +29,7 @@ def login():
     username = st.text_input("USUÁRIO")
     password = st.text_input("SENHA", type="password")
     
-    # Hardcoded credentials for testing
+    # Credenciais hardcoded para testes
     correct_username = "admin"
     correct_password = "admin123"
     
@@ -129,9 +129,10 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Caminho completo do arquivo
-    path = r"C:\Users\guilherme.lopes\OneDrive - Cadiveu\Documentos\GitHub\projeto-vendas-streamlit\data\base_vendas_24.xlsx"
-    
+    # Caminho relativo do arquivo
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # Diretório onde o script está localizado
+    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')  # Caminho relativo até o arquivo
+
     # Debug: Mostrar caminho completo e verificar se a pasta e arquivo existem
     st.write(f"Caminho completo do arquivo: {path}")
     st.write(f"Pasta existe: {os.path.exists(os.path.dirname(path))}")
@@ -207,7 +208,6 @@ def create_plot(df, title):
         fig.update_layout(
             title_x=0.5,
             hovermode='x unified',
-
             xaxis=dict(
                 title='<b>MÊS</b>',
                 title_font=dict(size=14, color='black'),
@@ -224,10 +224,3 @@ def create_plot(df, title):
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
-
-# Bloquear a execução do painel sem login
-if not login():
-    st.stop()  # Interrompe a execução se o login falhar
-
-if __name__ == "__main__":
-    main()
