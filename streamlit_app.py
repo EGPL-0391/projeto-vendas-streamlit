@@ -19,11 +19,11 @@ logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 # Função de autenticação
 def login():
     st.title("Autenticação")
-    username = st.text_input("abc")
-    password = st.text_input("123", type="password")
+    username = st.text_input("USUÁRIO")
+    password = st.text_input("SENHA", type="password")
     
-    correct_username = os.getenv("USERNAME")
-    correct_password = os.getenv("PASSWORD")
+    correct_username = os.getenv("abc")
+    correct_password = os.getenv("123")
     
     if username == correct_username and password == correct_password:
         st.success("Login bem-sucedido!")
