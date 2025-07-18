@@ -132,6 +132,10 @@ def load_data():
     # Caminho absoluto fornecido pelo usuário
     path = r"C:\Users\guilherme.lopes\OneDrive - Cadiveu\Documentos\GitHub\projeto-vendas-streamlit\data\base_vendas_24.xlsx"
     
+    # Debug: Mostrar caminho completo e verificar se a pasta existe
+    st.write(f"Caminho completo do arquivo: {path}")
+    st.write(f"Pasta existe: {os.path.exists(os.path.dirname(path))}")
+    
     if not os.path.exists(path):
         st.error("❌ Arquivo de dados não encontrado!")
         st.write(f"""
