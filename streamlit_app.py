@@ -5,107 +5,12 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import unicodedata
 import logging
-from dotenv import load_dotenv
-
-# Carregar variáveis de ambiente
-load_dotenv()
 
 # === Configurações ===
 FORECAST_MONTHS = 6
 REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
-
-# === Função de Autenticação ===
-def check_password():
-    """Função para verificar login e senha"""
-    st.sidebar.markdown("# 🔐 Autenticação")
-    username = st.sidebar.text_input("Usuário", type="default")
-    password = st.sidebar.text_input("Senha", type="password")
-    
-    if st.sidebar.button("Entrar"):
-        if username == os.getenv("APP_USERNAME") and password == os.getenv("APP_PASSWORD"):
-            st.sidebar.success("✅ Login realizado com sucesso!")
-            st.session_state['authenticated'] = True
-        else:
-            st.sidebar.error("❌ Usuário ou senha incorretos")
-    
-    # Se já autenticado, mostrar botão de logout
-    if 'authenticated' in st.session_state and st.session_state['authenticated']:
-        if st.sidebar.button("Sair"):
-            del st.session_state['authenticated']
-            st.rerun()
-
-# === Função para carregar dados ===
-def load_data():
-    if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
-        st.error("❌ Acesso não autorizado. Por favor, faça login.")
-        st.stop()
-
-    data_path = os.getenv("DATA_PATH")
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, data_path)
-    
-    if not os.path.exists(path):
-        st.error(f"❌ Arquivo não encontrado: {path}")
-        st.stop()
-
-    try:
-        df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
-        df.columns = df.columns.str.strip()
-        cols = {}
-        for c in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
-            fc = find_column(df, c)
-            if not fc:
-                st.error(f"❌ Coluna obrigatória '{c}' não encontrada.")
-                st.stop()
-            cols[c] = fc
-
-        # Converter colunas para os tipos corretos
-        df[cols['Cliente']] = df[cols['Cliente']].astype(str).str.strip().str.upper()
-        df[cols['Produto']] = df[cols['Produto']].astype(str).str.strip().str.upper()
-        df[cols['Quantidade']] = pd.to_numeric(df[cols['Quantidade']], errors='coerce')
-        
-        # Converter a coluna de data
-        try:
-            df = df[df[cols['Emissao']].notna()]
-            df[cols['Emissao']] = pd.to_datetime(df[cols['Emissao']], errors='coerce')
-            df = df[df[cols['Emissao']].notna()]
-            if df.empty:
-                st.error("❌ Todas as datas são inválidas após a conversão")
-                st.stop()
-        except Exception as e:
-            st.error(f"❌ Erro ao converter datas: {str(e)}")
-            st.stop()
-
-        # Limpar linhas com dados inválidos
-        df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
-        
-        # Filtrar por data mínima
-        try:
-            min_date = pd.to_datetime(MIN_DATE)
-            df = df[df[cols['Emissao']] >= min_date]
-        except Exception as e:
-            st.error(f"❌ Erro ao filtrar por data: {str(e)}")
-            st.stop()
-
-        if df.empty:
-            st.error("❌ Nenhum dado após filtragem por data.")
-            st.stop()
-
-        # Criar coluna AnoMes
-        df['AnoMes'] = df[cols['Emissao']].dt.to_period('M').dt.to_timestamp()
-
-        grupo_col = find_column(df, 'Grupo')
-        if grupo_col:
-            df['Grupo'] = df[grupo_col].astype(str).str.strip().str.upper()
-        else:
-            df['Grupo'] = 'SEM GRUPO'
-
-        return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar dados: {str(e)}")
-        st.stop()
 
 def remove_acentos(text):
     if not isinstance(text, str):
@@ -129,6 +34,44 @@ def validate_data(df, required_cols):
         return False
     return True
 
+def load_data():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
+    if not os.path.exists(path):
+        st.error(f"❌ Arquivo não encontrado: {path}")
+        st.stop()
+
+    df = pd.read_excel(path, sheet_name='Base vendas', dtype=str)
+    df.columns = df.columns.str.strip()
+    cols = {}
+    for c in ['Emissao', 'Cliente', 'Produto', 'Quantidade']:
+        fc = find_column(df, c)
+        if not fc:
+            st.error(f"❌ Coluna obrigatória '{c}' não encontrada.")
+            st.stop()
+        cols[c] = fc
+
+    df[cols['Cliente']] = df[cols['Cliente']].astype(str).str.strip().str.upper()
+    df[cols['Produto']] = df[cols['Produto']].astype(str).str.strip().str.upper()
+    df[cols['Emissao']] = pd.to_datetime(df[cols['Emissao']], errors='coerce')
+    df[cols['Quantidade']] = pd.to_numeric(df[cols['Quantidade']], errors='coerce')
+
+    df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
+    df = df[df[cols['Emissao']] >= pd.to_datetime(MIN_DATE)]
+    if df.empty:
+        st.error("❌ Nenhum dado após filtragem por data.")
+        st.stop()
+
+    df['AnoMes'] = df[cols['Emissao']].dt.to_period('M').dt.to_timestamp()
+
+    grupo_col = find_column(df, 'Grupo')
+    if grupo_col:
+        df['Grupo'] = df[grupo_col].astype(str).str.strip().str.upper()
+    else:
+        df['Grupo'] = 'SEM GRUPO'
+
+    return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
+
 def make_forecast_from_series(serie):
     m = ExponentialSmoothing(serie, trend='add', damped_trend=True, seasonal=None, initialization_method='estimated').fit()
     idx = pd.date_range(start=serie.index[-1] + pd.offsets.MonthBegin(), periods=FORECAST_MONTHS, freq='MS')
@@ -148,8 +91,7 @@ def create_plot(df, title):
             color='Previsao',
             title=title.upper(),
             markers=True,
-            labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'},
-            template='plotly_white'  # Usar tema claro
+            labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
 
         # Cores: histórico (preto), previsão (vermelho)
@@ -160,32 +102,16 @@ def create_plot(df, title):
         fig.update_layout(
             title_x=0.5,
             hovermode='x unified',
-            plot_bgcolor='white',  # Fundo branco
-            paper_bgcolor='white',  # Papel branco
-            
+
             xaxis=dict(
                 title='<b>MÊS</b>',
                 title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black'),
-                gridcolor='lightgray'  # Grade mais suave
+                tickfont=dict(size=12, color='black')
             ),
             yaxis=dict(
                 title='<b>QUANTIDADE</b>',
                 title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black'),
-                gridcolor='lightgray'  # Grade mais suave
-            ),
-            
-            # Ajustar layout para dispositivos móveis
-            margin=dict(l=20, r=20, t=60, b=20),
-            height=600,  # Altura fixa
-            width=None,  # Largura automática
-            
-            # Melhorar legibilidade
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
+                tickfont=dict(size=12, color='black')
             )
         )
 
@@ -195,12 +121,81 @@ def create_plot(df, title):
         return None
 
 def main():
-    """
-    Função principal do aplicativo. Ela verifica se o usuário está autenticado,
-    carrega os dados, aplica os filtros selecionados pelo usuário e exibe os resultados
-    em forma de gráfico. Além disso, ela também exibe estatísticas detalhadas sobre o
-    histórico e a previsão.
-    """
+    st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
+    st.title("📊 PAINEL DE VENDAS E PREVISÃO")
+
+    @st.cache_data
+    def get_data():
+        return load_data()
+    df = get_data()
+
+    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
+        st.stop()
+
+    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
+    dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
+
+    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
+    dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
+
+    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + sorted(dfc['Produto'].unique()))
+    dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
+
+    if dff.empty:
+        st.warning("⚠️ Nenhum dado com os filtros aplicados.")
+        return
+
+    grouped = dff.groupby('AnoMes', as_index=False)['Quantidade'].sum()
+    grouped['Previsao'] = 'HISTÓRICO'
+    serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
+
+    try:
+        fc = make_forecast_from_series(serie)
+        resultado = pd.concat([grouped, fc], ignore_index=True)
+    except Exception as e:
+        st.error(f"❌ Erro na previsão: {e}")
+        return
+
+    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
+        titulo = f"GRUPO {grupo} - CONSOLIDADO"
+    elif cliente != "TODOS" and produto == "TODOS":
+        titulo = f"{cliente} - TODOS OS PRODUTOS"
+    elif cliente == "TODOS" and produto != "TODOS":
+        titulo = f"TODOS OS CLIENTES - {produto}"
+    elif cliente != "TODOS" and produto != "TODOS":
+        titulo = f"{cliente} - {produto}"
+    else:
+        titulo = "PREVISÃO TOTAL"
+
+    st.markdown(f"### 📌 {titulo}")
+
+    fig = create_plot(resultado, titulo)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
+        historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
+        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
+
+        st.subheader("📊 HISTÓRICO")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total", f"{historico.sum():,.0f}")
+        col2.metric("Média", f"{historico.mean():.2f}")
+        col3.metric("Mediana", f"{historico.median():.0f}")
+        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
+
+        st.markdown("")
+
+        st.subheader("📈 PREVISÃO")
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
+        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
+        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
+        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
+
+        st.markdown("")
+        st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
 
 if __name__ == "__main__":
     main()
