@@ -1,0 +1,28 @@
+# Arquivos de ambiente
+.env
+*.env
+
+# Arquivos de dados
+*.xlsx
+*.xls
+*.csv
+
+# Arquivos de log
+*.log
+
+# Ambiente virtual
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos temporários
+.DS_Store
+Thumbs.db
+
+# Arquivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
