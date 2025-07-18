@@ -1,6 +1,0 @@
-# Ignorar arquivos de dados sensíveis
-/data/base_vendas_24.xlsx
-
-# Ignorar arquivos de configuração do ambiente
-*.env
-
