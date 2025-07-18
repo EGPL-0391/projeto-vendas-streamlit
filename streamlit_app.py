@@ -129,9 +129,8 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Use o caminho absoluto do arquivo
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, 'data', 'base_vendas_24.xlsx')
+    # Caminho absoluto fornecido pelo usuário
+    path = r"C:\Users\guilherme.lopes\OneDrive - Cadiveu\Documentos\GitHub\projeto-vendas-streamlit\data\base_vendas_24.xlsx"
     
     if not os.path.exists(path):
         st.error("❌ Arquivo de dados não encontrado!")
