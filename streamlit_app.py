@@ -129,11 +129,12 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Caminho relativo ao projeto
-    path = os.path.join('data', 'base_vendas_24.xlsx')
+    # Caminho relativo ao diretório atual
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, 'data', 'base_vendas_24.xlsx')
     
     # Debug: Mostrar caminho completo e verificar se a pasta existe
-    st.write(f"Caminho completo do arquivo: {os.path.abspath(path)}")
+    st.write(f"Caminho completo do arquivo: {path}")
     st.write(f"Pasta existe: {os.path.exists(os.path.dirname(path))}")
     
     if not os.path.exists(path):
