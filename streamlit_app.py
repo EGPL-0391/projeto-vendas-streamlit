@@ -61,12 +61,63 @@ def load_data():
                 st.stop()
             cols[c] = fc
 
+        # Converter colunas para os tipos corretos
+        df[cols['Cliente']] = df[cols['Cliente']].astype(str).str.strip().str.upper()
+        df[cols['Produto']] = df[cols['Produto']].astype(str).str.strip().str.upper()
+        df[cols['Quantidade']] = pd.to_numeric(df[cols['Quantidade']], errors='coerce')
+        
+        # Verificar formato das datas antes da conversão
+        st.write("Formato das datas antes da conversão:")
+        st.write(df[cols['Emissao']].head())
+        
+        # Converter a coluna de data
+        try:
+            # Primeiro, remova linhas com datas inválidas
+            df = df[df[cols['Emissao']].notna()]
+            
+            # Converta para datetime
+            df[cols['Emissao']] = pd.to_datetime(df[cols['Emissao']], errors='coerce')
+            
+            # Remova linhas onde a conversão falhou
+            df = df[df[cols['Emissao']].notna()]
+            
+            # Verifique se ainda temos dados
+            if df.empty:
+                st.error("❌ Todas as datas são inválidas após a conversão")
+                st.stop()
+                
+            # Verifique o formato após conversão
+            st.write("Formato das datas após conversão:")
+            st.write(df[cols['Emissao']].head())
+        except Exception as e:
+            st.error(f"❌ Erro ao converter datas: {str(e)}")
+            st.stop()
+
+        # Limpar linhas com dados inválidos
         df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
-        df = df[df[cols['Emissao']] >= pd.to_datetime(MIN_DATE)]
+        
+        # Filtrar por data mínima
+        try:
+            min_date = pd.to_datetime(MIN_DATE)
+            st.write(f"Data mínima: {min_date}")
+            
+            # Verifique o tipo das datas antes da comparação
+            st.write("Tipo das datas:")
+            st.write(df[cols['Emissao']].dtype)
+            
+            df = df[df[cols['Emissao']] >= min_date]
+            
+            # Verifique quantas linhas foram removidas
+            st.write(f"Linhas após filtro de data: {len(df)}")
+        except Exception as e:
+            st.error(f"❌ Erro ao filtrar por data: {str(e)}")
+            st.stop()
+
         if df.empty:
             st.error("❌ Nenhum dado após filtragem por data.")
             st.stop()
 
+        # Criar coluna AnoMes
         df['AnoMes'] = df[cols['Emissao']].dt.to_period('M').dt.to_timestamp()
 
         grupo_col = find_column(df, 'Grupo')
