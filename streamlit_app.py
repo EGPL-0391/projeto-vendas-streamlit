@@ -129,18 +129,19 @@ def validate_data(df, required_cols):
     return True
 
 def load_data():
-    # Caminho no ambiente de container
+    # Caminho completo do arquivo
     path = r"C:\Users\guilherme.lopes\OneDrive - Cadiveu\Documentos\GitHub\projeto-vendas-streamlit\data\base_vendas_24.xlsx"
     
-    # Debug: Mostrar caminho completo e verificar se a pasta existe
+    # Debug: Mostrar caminho completo e verificar se a pasta e arquivo existem
     st.write(f"Caminho completo do arquivo: {path}")
     st.write(f"Pasta existe: {os.path.exists(os.path.dirname(path))}")
+    st.write(f"Arquivo existe: {os.path.exists(path)}")
     
     if not os.path.exists(path):
         st.error("❌ Arquivo de dados não encontrado!")
         st.write(f"""
         1. Certifique-se de que você tem o arquivo base_vendas_24.xlsx com seus dados
-        2. O arquivo deve estar em: {path}
+        2. O arquivo deve estar em: {os.path.dirname(path)}
         3. O arquivo deve ter as colunas: Cliente, Produto, Quantidade, Emissao
         """)
         st.stop()
