@@ -148,7 +148,8 @@ def create_plot(df, title):
             color='Previsao',
             title=title.upper(),
             markers=True,
-            labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
+            labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'},
+            template='plotly_white'  # Usar tema claro
         )
 
         # Cores: histórico (preto), previsão (vermelho)
@@ -159,16 +160,32 @@ def create_plot(df, title):
         fig.update_layout(
             title_x=0.5,
             hovermode='x unified',
-
+            plot_bgcolor='white',  # Fundo branco
+            paper_bgcolor='white',  # Papel branco
+            
             xaxis=dict(
                 title='<b>MÊS</b>',
                 title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black')
+                tickfont=dict(size=12, color='black'),
+                gridcolor='lightgray'  # Grade mais suave
             ),
             yaxis=dict(
                 title='<b>QUANTIDADE</b>',
                 title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black')
+                tickfont=dict(size=12, color='black'),
+                gridcolor='lightgray'  # Grade mais suave
+            ),
+            
+            # Ajustar layout para dispositivos móveis
+            margin=dict(l=20, r=20, t=60, b=20),
+            height=600,  # Altura fixa
+            width=None,  # Largura automática
+            
+            # Melhorar legibilidade
+            font=dict(
+                family="Arial, sans-serif",
+                size=12,
+                color="black"
             )
         )
 
