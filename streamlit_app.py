@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 # Carregar variáveis de ambiente
 load_dotenv()
 
+# Checando se as variáveis foram carregadas corretamente
+st.write(f"Username: {os.getenv('abc')}")
+st.write(f"Password: {os.getenv('123')}")
+
 # === Configurações ===
 FORECAST_MONTHS = 6
 REDUCTION_FACTOR = 0.9
