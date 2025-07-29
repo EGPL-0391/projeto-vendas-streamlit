@@ -12,6 +12,93 @@ REDUCTION_FACTOR = 0.9
 MIN_DATE = '2024-01-01'
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
+# === Credenciais de Autenticação ===
+USUARIOS = {
+    "comercial": "cad@2025"
+}
+
+def check_authentication():
+    """Verifica se o usuário está autenticado"""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        show_login_page()
+        return False
+    return True
+
+def show_login_page():
+    """Exibe a página de login"""
+    st.set_page_config(page_title="LOGIN - PAINEL DE VENDAS", layout="centered")
+    
+    # CSS para estilizar o formulário de login
+    st.markdown("""
+    <style>
+    .login-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        background-color: #f8f9fa;
+    }
+    .login-title {
+        text-align: center;
+        color: #2c3e50;
+        margin-bottom: 2rem;
+    }
+    .stButton > button {
+        width: 100%;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        font-weight: bold;
+    }
+    .stButton > button:hover {
+        background-color: #2980b9;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<h1 class="login-title">🔐 ACESSO AO SISTEMA</h1>', unsafe_allow_html=True)
+    st.markdown('<h3 class="login-title">PAINEL DE VENDAS</h3>', unsafe_allow_html=True)
+    
+    with st.form("login_form"):
+        st.markdown("### 👤 CREDENCIAIS")
+        usuario = st.text_input("USUÁRIO", placeholder="Digite seu usuário")
+        senha = st.text_input("SENHA", type="password", placeholder="Digite sua senha")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            submit_button = st.form_submit_button("🚀 ENTRAR")
+        
+        if submit_button:
+            if authenticate_user(usuario, senha):
+                st.session_state.authenticated = True
+                st.success("✅ Login realizado com sucesso!")
+                st.rerun()
+            else:
+                st.error("❌ Usuário ou senha incorretos!")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Informações adicionais
+    st.markdown("---")
+    st.markdown("### ℹ️ INFORMAÇÕES DO SISTEMA")
+    st.info("Sistema de análise de vendas e previsões para tomada de decisões comerciais.")
+
+def authenticate_user(usuario, senha):
+    """Autentica o usuário"""
+    return usuario in USUARIOS and USUARIOS[usuario] == senha
+
+def logout():
+    """Realiza o logout do usuário"""
+    st.session_state.authenticated = False
+    st.rerun()
+
 def remove_acentos(text):
     if not isinstance(text, str):
         return text
@@ -102,7 +189,6 @@ def create_plot(df, title):
         fig.update_layout(
             title_x=0.5,
             hovermode='x unified',
-
             xaxis=dict(
                 title='<b>MÊS</b>',
                 title_font=dict(size=14, color='black'),
@@ -120,13 +206,23 @@ def create_plot(df, title):
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
 
-def main():
+def show_dashboard():
+    """Exibe o dashboard principal após autenticação"""
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
-    st.title("📊 PAINEL DE VENDAS E PREVISÃO")
+    
+    # Header com botão de logout
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.title("📊 PAINEL DE VENDAS E PREVISÃO")
+    with col2:
+        st.markdown("### 👤 Usuário: comercial")
+        if st.button("🚪 SAIR", type="secondary"):
+            logout()
 
     @st.cache_data
     def get_data():
         return load_data()
+    
     df = get_data()
 
     if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
@@ -196,6 +292,15 @@ def main():
 
         st.markdown("")
         st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
+
+def main():
+    """Função principal que controla o fluxo da aplicação"""
+    # Verifica autenticação
+    if not check_authentication():
+        return
+    
+    # Se autenticado, mostra o dashboard
+    show_dashboard()
 
 if __name__ == "__main__":
     main()
