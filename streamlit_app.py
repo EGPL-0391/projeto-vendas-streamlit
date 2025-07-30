@@ -6,6 +6,14 @@ import os
 import unicodedata
 import logging
 
+# CSS para ocultar o footer do Streamlit
+hide_streamlit_style = """
+<style>
+footer {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # === Configurações ===
 FORECAST_MONTHS = 6
 REDUCTION_FACTOR = 0.9
