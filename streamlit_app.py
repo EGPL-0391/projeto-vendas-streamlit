@@ -5,6 +5,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import os
 import unicodedata
 import logging
+from io import BytesIO
 
 # CSS para ocultar o footer do Streamlit
 hide_streamlit_style = """
@@ -214,6 +215,151 @@ def create_plot(df, title):
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
 
+def create_export_table(df, selected_date):
+    """Cria tabela consolidada por produto para exportação"""
+    # Gerar previsões para todos os produtos únicos
+    export_data = []
+    
+    produtos = df['Produto'].unique()
+    
+    for produto in produtos:
+        df_produto = df[df['Produto'] == produto]
+        grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
+        
+        if len(grouped) < 3:  # Mínimo de dados para previsão
+            continue
+            
+        grouped['Previsao'] = 'HISTÓRICO'
+        serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
+        
+        try:
+            fc = make_forecast_from_series(serie)
+            # Filtrar pela data selecionada
+            previsao_mes = fc[fc['AnoMes'] == selected_date]
+            
+            if not previsao_mes.empty:
+                export_data.append({
+                    'Produto': produto,
+                    'Data': selected_date.strftime('%m/%Y'),
+                    'Quantidade_Prevista': int(previsao_mes['Quantidade'].iloc[0])
+                })
+        except:
+            continue
+    
+    return pd.DataFrame(export_data)
+
+def to_excel(df):
+    """Converte DataFrame para Excel em memória"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='Previsao_Produtos', index=False)
+        
+        # Formatação básica
+        workbook = writer.book
+        worksheet = writer.sheets['Previsao_Produtos']
+        
+        # Formato para números
+        number_format = workbook.add_format({'num_format': '#,##0'})
+        worksheet.set_column('C:C', 15, number_format)
+        
+        # Cabeçalho em negrito
+        header_format = workbook.add_format({'bold': True})
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+    
+    output.seek(0)
+    return output
+
+def show_export_section(df):
+    """Seção para exportação de previsões por produto"""
+    st.markdown("---")
+    st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Filtro de Grupo
+        grupo_export = st.selectbox(
+            "LINHA:", 
+            ["TODOS"] + sorted(df['Grupo'].unique()),
+            key="grupo_export"
+        )
+        
+        # Filtro por cliente
+        dfg_export = df if grupo_export == "TODOS" else df[df['Grupo'] == grupo_export]
+        cliente_export = st.selectbox(
+            "CLIENTE:", 
+            ["TODOS"] + sorted(dfg_export['Cliente'].unique()),
+            key="cliente_export"
+        )
+    
+    with col2:
+        # Seletor de produtos
+        dfc_export = dfg_export if cliente_export == "TODOS" else dfg_export[dfg_export['Cliente'] == cliente_export]
+        produtos_disponiveis = ["TODOS"] + sorted(dfc_export['Produto'].unique())
+        produtos_selecionados = st.multiselect(
+            "PRODUTOS:", 
+            produtos_disponiveis,
+            default=["TODOS"],
+            key="produtos_export"
+        )
+        
+        # Seletor de data
+        data_options = []
+        base_date = pd.Timestamp.now().replace(day=1)  # Primeiro dia do mês atual
+        for i in range(FORECAST_MONTHS):
+            future_date = base_date + pd.DateOffset(months=i+1)
+            data_options.append(future_date)
+        
+        selected_date = st.selectbox(
+            "MÊS DE PREVISÃO:",
+            data_options,
+            format_func=lambda x: x.strftime('%m/%Y'),
+            key="data_export"
+        )
+    
+    # Aplicar filtros
+    df_filtered = dfc_export.copy()
+    
+    if "TODOS" not in produtos_selecionados and produtos_selecionados:
+        df_filtered = df_filtered[df_filtered['Produto'].isin(produtos_selecionados)]
+    
+    if not df_filtered.empty:
+        # Gerar tabela de exportação
+        export_table = create_export_table(df_filtered, selected_date)
+        
+        if not export_table.empty:
+            st.markdown("### 📊 PREVIEW DA TABELA")
+            
+            # Mostrar resumo
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total de Produtos", len(export_table))
+            col2.metric("Quantidade Total Prevista", f"{export_table['Quantidade_Prevista'].sum():,}")
+            col3.metric("Média por Produto", f"{export_table['Quantidade_Prevista'].mean():.0f}")
+            
+            # Mostrar tabela
+            st.dataframe(
+                export_table.sort_values('Quantidade_Prevista', ascending=False),
+                use_container_width=True
+            )
+            
+            # Botão de download
+            excel_file = to_excel(export_table)
+            filename = f"previsao_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
+            
+            st.download_button(
+                label="📥 BAIXAR EXCEL",
+                data=excel_file,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary"
+            )
+            
+        else:
+            st.warning("⚠️ Nenhuma previsão disponível para os filtros selecionados.")
+    else:
+        st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
+
 def show_dashboard():
     """Exibe o dashboard principal após autenticação"""
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
@@ -236,6 +382,9 @@ def show_dashboard():
     if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
         st.stop()
 
+    # === SEÇÃO PRINCIPAL DE GRÁFICOS ===
+    st.markdown("## 📈 ANÁLISE GRÁFICA")
+    
     grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
@@ -300,6 +449,9 @@ def show_dashboard():
 
         st.markdown("")
         st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
+
+    # === NOVA SEÇÃO DE EXPORTAÇÃO ===
+    show_export_section(df)
 
 def main():
     """Função principal que controla o fluxo da aplicação"""
