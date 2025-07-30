@@ -217,33 +217,40 @@ def create_plot(df, title):
 
 def create_export_table(df, selected_date):
     """Cria tabela consolidada por produto para exportação"""
-    # Gerar previsões para todos os produtos únicos
     export_data = []
-    
     produtos = df['Produto'].unique()
     
     for produto in produtos:
         df_produto = df[df['Produto'] == produto]
+        
+        # Consolidar por mês para o produto
         grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
         
-        if len(grouped) < 3:  # Mínimo de dados para previsão
+        if len(grouped) < 2:  # Reduzir requisito mínimo
             continue
-            
-        grouped['Previsao'] = 'HISTÓRICO'
+        
+        # Criar série temporal
         serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
         
         try:
+            # Gerar previsão
             fc = make_forecast_from_series(serie)
-            # Filtrar pela data selecionada
+            
+            # Procurar pela data selecionada
             previsao_mes = fc[fc['AnoMes'] == selected_date]
             
             if not previsao_mes.empty:
-                export_data.append({
-                    'Produto': produto,
-                    'Data': selected_date.strftime('%m/%Y'),
-                    'Quantidade_Prevista': int(previsao_mes['Quantidade'].iloc[0])
-                })
-        except:
+                quantidade_prevista = int(previsao_mes['Quantidade'].iloc[0])
+                # Só incluir se quantidade > 0
+                if quantidade_prevista > 0:
+                    export_data.append({
+                        'Produto': produto,
+                        'Data': selected_date.strftime('%m/%Y'),
+                        'Quantidade_Prevista': quantidade_prevista
+                    })
+        except Exception as e:
+            # Debug: mostrar erro no console se necessário
+            print(f"Erro na previsão para produto {produto}: {e}")
             continue
     
     return pd.DataFrame(export_data)
@@ -304,19 +311,32 @@ def show_export_section(df):
             key="produtos_export"
         )
         
-        # Seletor de data
+        # Seletor de data - incluindo histórico e previsão
+        # Pegar últimos 6 meses históricos
+        max_date = df['AnoMes'].max()
         data_options = []
-        base_date = pd.Timestamp.now().replace(day=1)  # Primeiro dia do mês atual
-        for i in range(FORECAST_MONTHS):
-            future_date = base_date + pd.DateOffset(months=i+1)
-            data_options.append(future_date)
         
-        selected_date = st.selectbox(
-            "MÊS DE PREVISÃO:",
-            data_options,
-            format_func=lambda x: x.strftime('%m/%Y'),
+        # Adicionar últimos 6 meses históricos
+        for i in range(6, 0, -1):
+            hist_date = max_date - pd.DateOffset(months=i-1)
+            data_options.append(('HISTÓRICO', hist_date))
+        
+        # Adicionar próximos 6 meses de previsão
+        for i in range(1, FORECAST_MONTHS + 1):
+            future_date = max_date + pd.DateOffset(months=i)
+            data_options.append(('PREVISÃO', future_date))
+        
+        # Criar selectbox com opções formatadas
+        date_labels = [f"{tipo} - {data.strftime('%m/%Y')}" for tipo, data in data_options]
+        selected_index = st.selectbox(
+            "MÊS/ANO:",
+            range(len(date_labels)),
+            format_func=lambda x: date_labels[x],
+            index=6,  # Começar no primeiro mês de previsão
             key="data_export"
         )
+        
+        selected_type, selected_date = data_options[selected_index]
     
     # Aplicar filtros
     df_filtered = dfc_export.copy()
@@ -326,15 +346,27 @@ def show_export_section(df):
     
     if not df_filtered.empty:
         # Gerar tabela de exportação
-        export_table = create_export_table(df_filtered, selected_date)
+        if selected_type == 'HISTÓRICO':
+            # Para dados históricos, usar dados reais
+            hist_data = df_filtered[df_filtered['AnoMes'] == selected_date]
+            if not hist_data.empty:
+                export_table = hist_data.groupby('Produto', as_index=False)['Quantidade'].sum()
+                export_table.columns = ['Produto', 'Quantidade_Prevista']
+                export_table['Data'] = selected_date.strftime('%m/%Y')
+                export_table = export_table[['Produto', 'Data', 'Quantidade_Prevista']]
+            else:
+                export_table = pd.DataFrame()
+        else:
+            # Para previsões, usar a função de previsão
+            export_table = create_export_table(df_filtered, selected_date)
         
         if not export_table.empty:
-            st.markdown("### 📊 PREVIEW DA TABELA")
+            st.markdown(f"### 📊 PREVIEW DA TABELA - {selected_type}")
             
             # Mostrar resumo
             col1, col2, col3 = st.columns(3)
             col1.metric("Total de Produtos", len(export_table))
-            col2.metric("Quantidade Total Prevista", f"{export_table['Quantidade_Prevista'].sum():,}")
+            col2.metric("Quantidade Total", f"{export_table['Quantidade_Prevista'].sum():,}")
             col3.metric("Média por Produto", f"{export_table['Quantidade_Prevista'].mean():.0f}")
             
             # Mostrar tabela
@@ -345,7 +377,7 @@ def show_export_section(df):
             
             # Botão de download
             excel_file = to_excel(export_table)
-            filename = f"previsao_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
+            filename = f"{selected_type.lower()}_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
             
             st.download_button(
                 label="📥 BAIXAR EXCEL",
@@ -356,7 +388,7 @@ def show_export_section(df):
             )
             
         else:
-            st.warning("⚠️ Nenhuma previsão disponível para os filtros selecionados.")
+            st.warning(f"⚠️ Nenhum dado disponível para {selected_type.lower()} em {selected_date.strftime('%m/%Y')}.")
     else:
         st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
 
