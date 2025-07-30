@@ -216,24 +216,24 @@ def create_plot(df, title):
         return None
 
 def create_export_table(df, selected_date):
-    """Cria tabela consolidada por produto para exportação"""
+    """Cria tabela consolidada por produto para exportação - MESMA LÓGICA DO GRÁFICO"""
     export_data = []
     produtos = df['Produto'].unique()
     
     for produto in produtos:
         df_produto = df[df['Produto'] == produto]
         
-        # Consolidar por mês para o produto
+        # MESMA LÓGICA DO GRÁFICO PRINCIPAL
         grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
         
-        if len(grouped) < 2:  # Reduzir requisito mínimo
+        if len(grouped) < 2:
             continue
         
-        # Criar série temporal
+        # Criar série exatamente como no gráfico
         serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
         
         try:
-            # Gerar previsão
+            # MESMA FUNÇÃO DE PREVISÃO DO GRÁFICO
             fc = make_forecast_from_series(serie)
             
             # Procurar pela data selecionada
@@ -241,16 +241,13 @@ def create_export_table(df, selected_date):
             
             if not previsao_mes.empty:
                 quantidade_prevista = int(previsao_mes['Quantidade'].iloc[0])
-                # Só incluir se quantidade > 0
                 if quantidade_prevista > 0:
                     export_data.append({
                         'Produto': produto,
                         'Data': selected_date.strftime('%m/%Y'),
                         'Quantidade_Prevista': quantidade_prevista
                     })
-        except Exception as e:
-            # Debug: mostrar erro no console se necessário
-            print(f"Erro na previsão para produto {produto}: {e}")
+        except:
             continue
     
     return pd.DataFrame(export_data)
@@ -311,32 +308,21 @@ def show_export_section(df):
             key="produtos_export"
         )
         
-        # Seletor de data - incluindo histórico e previsão
-        # Pegar últimos 6 meses históricos
+        # Seletor de data - APENAS PREVISÕES
         max_date = df['AnoMes'].max()
         data_options = []
-        
-        # Adicionar últimos 6 meses históricos
-        for i in range(6, 0, -1):
-            hist_date = max_date - pd.DateOffset(months=i-1)
-            data_options.append(('HISTÓRICO', hist_date))
         
         # Adicionar próximos 6 meses de previsão
         for i in range(1, FORECAST_MONTHS + 1):
             future_date = max_date + pd.DateOffset(months=i)
-            data_options.append(('PREVISÃO', future_date))
+            data_options.append(future_date)
         
-        # Criar selectbox com opções formatadas
-        date_labels = [f"{tipo} - {data.strftime('%m/%Y')}" for tipo, data in data_options]
-        selected_index = st.selectbox(
-            "MÊS/ANO:",
-            range(len(date_labels)),
-            format_func=lambda x: date_labels[x],
-            index=6,  # Começar no primeiro mês de previsão
+        selected_date = st.selectbox(
+            "MÊS DE PREVISÃO:",
+            data_options,
+            format_func=lambda x: x.strftime('%m/%Y'),
             key="data_export"
         )
-        
-        selected_type, selected_date = data_options[selected_index]
     
     # Aplicar filtros
     df_filtered = dfc_export.copy()
@@ -345,31 +331,13 @@ def show_export_section(df):
         df_filtered = df_filtered[df_filtered['Produto'].isin(produtos_selecionados)]
     
     if not df_filtered.empty:
-        # Gerar tabela de exportação
-        if selected_type == 'HISTÓRICO':
-            # Para dados históricos, usar dados reais
-            hist_data = df_filtered[df_filtered['AnoMes'] == selected_date]
-            if not hist_data.empty:
-                export_table = hist_data.groupby('Produto', as_index=False)['Quantidade'].sum()
-                export_table.columns = ['Produto', 'Quantidade_Prevista']
-                export_table['Data'] = selected_date.strftime('%m/%Y')
-                export_table = export_table[['Produto', 'Data', 'Quantidade_Prevista']]
-            else:
-                export_table = pd.DataFrame()
-        else:
-            # Para previsões, usar a função de previsão
-            export_table = create_export_table(df_filtered, selected_date)
+        # Gerar tabela de exportação - APENAS PREVISÕES
+        export_table = create_export_table(df_filtered, selected_date)
         
         if not export_table.empty:
-            st.markdown(f"### 📊 PREVIEW DA TABELA - {selected_type}")
+            st.markdown(f"### 📊 PREVIEW - PREVISÃO {selected_date.strftime('%m/%Y')}")
             
-            # Mostrar resumo
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total de Produtos", len(export_table))
-            col2.metric("Quantidade Total", f"{export_table['Quantidade_Prevista'].sum():,}")
-            col3.metric("Média por Produto", f"{export_table['Quantidade_Prevista'].mean():.0f}")
-            
-            # Mostrar tabela
+            # Mostrar apenas a tabela
             st.dataframe(
                 export_table.sort_values('Quantidade_Prevista', ascending=False),
                 use_container_width=True
@@ -377,7 +345,7 @@ def show_export_section(df):
             
             # Botão de download
             excel_file = to_excel(export_table)
-            filename = f"{selected_type.lower()}_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
+            filename = f"previsao_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
             
             st.download_button(
                 label="📥 BAIXAR EXCEL",
@@ -388,7 +356,7 @@ def show_export_section(df):
             )
             
         else:
-            st.warning(f"⚠️ Nenhum dado disponível para {selected_type.lower()} em {selected_date.strftime('%m/%Y')}.")
+            st.warning(f"⚠️ Nenhuma previsão disponível para {selected_date.strftime('%m/%Y')}.")
     else:
         st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
 
