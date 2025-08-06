@@ -322,20 +322,18 @@ def to_excel_single(df):
 
 
 
-def show_export_section(df):
-    """Seção para exportação de previsões por produto"""
+def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
+    """Seção para exportação de previsões - OBEDECE OS MESMOS FILTROS DA ANÁLISE GRÁFICA"""
     st.markdown("---")
     st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
     
-    # Filtro simples: apenas TODOS
-    export_option = st.selectbox(
-        "SELECIONE A EXPORTAÇÃO:", 
-        ["TODOS OS PRODUTOS"],
-        key="export_option"
-    )
+    # Mostrar filtros aplicados
+    st.info(f"📊 **Filtros Aplicados:** Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}")
     
-    # Usar todos os dados
-    df_filtered = df.copy()
+    # Aplicar os mesmos filtros da análise gráfica
+    dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
+    dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
+    df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
     
     if not df_filtered.empty:
         # Gerar tabela completa com todas as previsões
@@ -352,30 +350,42 @@ def show_export_section(df):
             col2.metric("📅 MESES", meses_previstos)
             col3.metric("📊 TOTAL PREVISÕES", total_previsoes)
             
-            # Botão de download completo (apenas resumo)
-            excel_complete = to_excel_single(all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']])
-            filename_complete = f"previsoes_completas_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
+            # Nome do arquivo baseado nos filtros
+            if grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+                filename_suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
+            elif cliente_atual != "TODOS" and produto_atual == "TODOS":
+                filename_suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
+            elif cliente_atual == "TODOS" and produto_atual != "TODOS":
+                filename_suffix = f"produto_{produto_atual.replace(' ', '_')}"
+            elif cliente_atual != "TODOS" and produto_atual != "TODOS":
+                filename_suffix = f"{cliente_atual.replace(' ', '_')}_{produto_atual.replace(' ', '_')}"
+            else:
+                filename_suffix = "todos"
+            
+            # Botão de download
+            excel_complete = to_excel_single(all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False]))
+            filename_complete = f"previsoes_{filename_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
             
             st.download_button(
-                label="📥 BAIXAR TODAS AS PREVISÕES (6 MESES)",
+                label="📥 BAIXAR PREVISÕES (6 MESES)",
                 data=excel_complete,
                 file_name=filename_complete,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                help="Arquivo Excel com todas as previsões dos próximos 6 meses"
+                help="Arquivo Excel com previsões baseadas nos filtros aplicados"
             )
             
             # Preview dos dados completos
-            with st.expander("👀 PREVIEW DOS DADOS COMPLETOS"):
+            with st.expander("👀 PREVIEW DOS DADOS PARA EXPORTAÇÃO"):
                 st.dataframe(
                     all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False]),
                     use_container_width=True
                 )
             
         else:
-            st.warning("⚠️ Nenhuma previsão disponível.")
+            st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
     else:
-        st.warning("⚠️ Nenhum dado disponível.")
+        st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
 
 def show_dashboard():
     """Exibe o dashboard principal após autenticação"""
@@ -468,7 +478,7 @@ def show_dashboard():
         st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
 
     # === NOVA SEÇÃO DE EXPORTAÇÃO ===
-    show_export_section(df)
+    show_export_section(df, grupo, cliente, produto)
 
 def main():
     """Função principal que controla o fluxo da aplicação"""
