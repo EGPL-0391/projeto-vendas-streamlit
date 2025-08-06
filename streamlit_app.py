@@ -252,8 +252,50 @@ def create_export_table(df, selected_date):
     
     return pd.DataFrame(export_data)
 
-def to_excel(df):
-    """Converte DataFrame para Excel em memória"""
+def create_all_forecasts_table(df):
+    """Cria tabela com TODAS as previsões para todos os produtos"""
+    all_forecasts = []
+    produtos = df['Produto'].unique()
+    
+    # Calcular datas de previsão
+    max_date = df['AnoMes'].max()
+    forecast_dates = []
+    for i in range(1, FORECAST_MONTHS + 1):
+        future_date = max_date + pd.DateOffset(months=i)
+        forecast_dates.append(future_date)
+    
+    for produto in produtos:
+        df_produto = df[df['Produto'] == produto]
+        grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
+        
+        if len(grouped) < 2:
+            continue
+        
+        serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
+        
+        try:
+            fc = make_forecast_from_series(serie)
+            
+            # Para cada mês de previsão
+            for forecast_date in forecast_dates:
+                previsao_mes = fc[fc['AnoMes'] == forecast_date]
+                
+                if not previsao_mes.empty:
+                    quantidade_prevista = int(previsao_mes['Quantidade'].iloc[0])
+                    if quantidade_prevista > 0:
+                        all_forecasts.append({
+                            'Produto': produto,
+                            'Data': forecast_date.strftime('%m/%Y'),
+                            'AnoMes': forecast_date,
+                            'Quantidade_Prevista': quantidade_prevista
+                        })
+        except:
+            continue
+    
+    return pd.DataFrame(all_forecasts)
+
+def to_excel_single(df):
+    """Converte DataFrame para Excel em memória - versão simples"""
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Previsao_Produtos', index=False)
@@ -270,6 +312,55 @@ def to_excel(df):
         header_format = workbook.add_format({'bold': True})
         for col_num, value in enumerate(df.columns.values):
             worksheet.write(0, col_num, value, header_format)
+    
+    output.seek(0)
+    return output
+
+def to_excel_multiple(all_forecasts_df):
+    """Converte DataFrame para Excel com múltiplas abas (uma para cada mês)"""
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Agrupar por data
+        dates = sorted(all_forecasts_df['AnoMes'].unique())
+        
+        # Criar uma aba para cada mês
+        for date in dates:
+            month_data = all_forecasts_df[all_forecasts_df['AnoMes'] == date].copy()
+            month_data = month_data[['Produto', 'Data', 'Quantidade_Prevista']].sort_values('Quantidade_Prevista', ascending=False)
+            
+            sheet_name = date.strftime('%m_%Y')
+            month_data.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Formatação
+            workbook = writer.book
+            worksheet = writer.sheets[sheet_name]
+            
+            # Formato para números
+            number_format = workbook.add_format({'num_format': '#,##0'})
+            worksheet.set_column('C:C', 15, number_format)
+            
+            # Cabeçalho em negrito
+            header_format = workbook.add_format({'bold': True})
+            for col_num, value in enumerate(month_data.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+                
+            # Ajustar largura das colunas
+            worksheet.set_column('A:A', 30)  # Produto
+            worksheet.set_column('B:B', 10)  # Data
+        
+        # Criar aba resumo com todos os dados
+        all_data_summary = all_forecasts_df[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Produto', 'Data'])
+        all_data_summary.to_excel(writer, sheet_name='Resumo_Completo', index=False)
+        
+        # Formatação da aba resumo
+        worksheet_resumo = writer.sheets['Resumo_Completo']
+        worksheet_resumo.set_column('A:A', 30)
+        worksheet_resumo.set_column('B:B', 10)
+        worksheet_resumo.set_column('C:C', 15, number_format)
+        
+        for col_num, value in enumerate(all_data_summary.columns.values):
+            worksheet_resumo.write(0, col_num, value, header_format)
     
     output.seek(0)
     return output
@@ -331,11 +422,14 @@ def show_export_section(df):
         df_filtered = df_filtered[df_filtered['Produto'].isin(produtos_selecionados)]
     
     if not df_filtered.empty:
+        # === EXPORTAÇÃO INDIVIDUAL (MÊS ESPECÍFICO) ===
+        st.markdown("### 📊 EXPORTAÇÃO INDIVIDUAL")
+        
         # Gerar tabela de exportação - APENAS PREVISÕES
         export_table = create_export_table(df_filtered, selected_date)
         
         if not export_table.empty:
-            st.markdown(f"### 📊 PREVIEW - PREVISÃO {selected_date.strftime('%m/%Y')}")
+            st.markdown(f"#### 📈 PREVIEW - PREVISÃO {selected_date.strftime('%m/%Y')}")
             
             # Mostrar apenas a tabela
             st.dataframe(
@@ -343,20 +437,63 @@ def show_export_section(df):
                 use_container_width=True
             )
             
-            # Botão de download
-            excel_file = to_excel(export_table)
+            # Botão de download individual
+            excel_file = to_excel_single(export_table)
             filename = f"previsao_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
             
             st.download_button(
-                label="📥 BAIXAR EXCEL",
+                label="📥 BAIXAR MÊS ESPECÍFICO",
                 data=excel_file,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary"
+                type="secondary"
             )
             
         else:
             st.warning(f"⚠️ Nenhuma previsão disponível para {selected_date.strftime('%m/%Y')}.")
+        
+        st.markdown("---")
+        
+        # === NOVA EXPORTAÇÃO COMPLETA (TODOS OS MESES) ===
+        st.markdown("### 📋 EXPORTAÇÃO COMPLETA")
+        st.info("💡 Esta opção exporta TODAS as previsões (6 meses) em um único arquivo Excel com abas separadas por mês.")
+        
+        # Gerar tabela completa
+        all_forecasts = create_all_forecasts_table(df_filtered)
+        
+        if not all_forecasts.empty:
+            # Mostrar resumo
+            total_produtos = len(all_forecasts['Produto'].unique())
+            total_previsoes = len(all_forecasts)
+            meses_previstos = len(all_forecasts['Data'].unique())
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("🎯 PRODUTOS", total_produtos)
+            col2.metric("📅 MESES", meses_previstos)
+            col3.metric("📊 TOTAL PREVISÕES", total_previsoes)
+            
+            # Botão de download completo
+            excel_complete = to_excel_multiple(all_forecasts)
+            filename_complete = f"previsoes_completas_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
+            
+            st.download_button(
+                label="📥 BAIXAR TODAS AS PREVISÕES (6 MESES)",
+                data=excel_complete,
+                file_name=filename_complete,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                help="Arquivo Excel com uma aba para cada mês + resumo completo"
+            )
+            
+            # Preview dos dados completos
+            with st.expander("👀 PREVIEW DOS DADOS COMPLETOS"):
+                st.dataframe(
+                    all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False]),
+                    use_container_width=True
+                )
+            
+        else:
+            st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
     else:
         st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
 
