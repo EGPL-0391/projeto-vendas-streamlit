@@ -370,95 +370,18 @@ def show_export_section(df):
     st.markdown("---")
     st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
     
-    col1, col2 = st.columns(2)
+    # Filtro simples: apenas TODOS
+    export_option = st.selectbox(
+        "SELECIONE A EXPORTAÇÃO:", 
+        ["TODOS OS PRODUTOS"],
+        key="export_option"
+    )
     
-    with col1:
-        # Filtro de Grupo
-        grupo_export = st.selectbox(
-            "LINHA:", 
-            ["TODOS"] + sorted(df['Grupo'].unique()),
-            key="grupo_export"
-        )
-        
-        # Filtro por cliente
-        dfg_export = df if grupo_export == "TODOS" else df[df['Grupo'] == grupo_export]
-        cliente_export = st.selectbox(
-            "CLIENTE:", 
-            ["TODOS"] + sorted(dfg_export['Cliente'].unique()),
-            key="cliente_export"
-        )
-    
-    with col2:
-        # Seletor de produtos
-        dfc_export = dfg_export if cliente_export == "TODOS" else dfg_export[dfg_export['Cliente'] == cliente_export]
-        produtos_disponiveis = ["TODOS"] + sorted(dfc_export['Produto'].unique())
-        produtos_selecionados = st.multiselect(
-            "PRODUTOS:", 
-            produtos_disponiveis,
-            default=["TODOS"],
-            key="produtos_export"
-        )
-        
-        # Seletor de data - APENAS PREVISÕES
-        max_date = df['AnoMes'].max()
-        data_options = []
-        
-        # Adicionar próximos 6 meses de previsão
-        for i in range(1, FORECAST_MONTHS + 1):
-            future_date = max_date + pd.DateOffset(months=i)
-            data_options.append(future_date)
-        
-        selected_date = st.selectbox(
-            "MÊS DE PREVISÃO:",
-            data_options,
-            format_func=lambda x: x.strftime('%m/%Y'),
-            key="data_export"
-        )
-    
-    # Aplicar filtros
-    df_filtered = dfc_export.copy()
-    
-    if "TODOS" not in produtos_selecionados and produtos_selecionados:
-        df_filtered = df_filtered[df_filtered['Produto'].isin(produtos_selecionados)]
+    # Usar todos os dados
+    df_filtered = df.copy()
     
     if not df_filtered.empty:
-        # === EXPORTAÇÃO INDIVIDUAL (MÊS ESPECÍFICO) ===
-        st.markdown("### 📊 EXPORTAÇÃO INDIVIDUAL")
-        
-        # Gerar tabela de exportação - APENAS PREVISÕES
-        export_table = create_export_table(df_filtered, selected_date)
-        
-        if not export_table.empty:
-            st.markdown(f"#### 📈 PREVIEW - PREVISÃO {selected_date.strftime('%m/%Y')}")
-            
-            # Mostrar apenas a tabela
-            st.dataframe(
-                export_table.sort_values('Quantidade_Prevista', ascending=False),
-                use_container_width=True
-            )
-            
-            # Botão de download individual
-            excel_file = to_excel_single(export_table)
-            filename = f"previsao_produtos_{selected_date.strftime('%m_%Y')}.xlsx"
-            
-            st.download_button(
-                label="📥 BAIXAR MÊS ESPECÍFICO",
-                data=excel_file,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="secondary"
-            )
-            
-        else:
-            st.warning(f"⚠️ Nenhuma previsão disponível para {selected_date.strftime('%m/%Y')}.")
-        
-        st.markdown("---")
-        
-        # === NOVA EXPORTAÇÃO COMPLETA (TODOS OS MESES) ===
-        st.markdown("### 📋 EXPORTAÇÃO COMPLETA")
-        st.info("💡 Esta opção exporta TODAS as previsões (6 meses) em um único arquivo Excel com abas separadas por mês.")
-        
-        # Gerar tabela completa
+        # Gerar tabela completa com todas as previsões
         all_forecasts = create_all_forecasts_table(df_filtered)
         
         if not all_forecasts.empty:
@@ -472,8 +395,8 @@ def show_export_section(df):
             col2.metric("📅 MESES", meses_previstos)
             col3.metric("📊 TOTAL PREVISÕES", total_previsoes)
             
-            # Botão de download completo
-            excel_complete = to_excel_multiple(all_forecasts)
+            # Botão de download completo (apenas resumo)
+            excel_complete = to_excel_single(all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']])
             filename_complete = f"previsoes_completas_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
             
             st.download_button(
@@ -482,7 +405,7 @@ def show_export_section(df):
                 file_name=filename_complete,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                help="Arquivo Excel com uma aba para cada mês + resumo completo"
+                help="Arquivo Excel com todas as previsões dos próximos 6 meses"
             )
             
             # Preview dos dados completos
@@ -493,9 +416,9 @@ def show_export_section(df):
                 )
             
         else:
-            st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
+            st.warning("⚠️ Nenhuma previsão disponível.")
     else:
-        st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
+        st.warning("⚠️ Nenhum dado disponível.")
 
 def show_dashboard():
     """Exibe o dashboard principal após autenticação"""
