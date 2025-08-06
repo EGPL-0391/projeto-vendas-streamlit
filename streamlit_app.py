@@ -298,11 +298,11 @@ def to_excel_single(df):
     """Converte DataFrame para Excel em memória - versão simples"""
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, sheet_name='Previsao_Produtos', index=False)
+        df.to_excel(writer, sheet_name='Previsoes_Completas', index=False)
         
         # Formatação básica
         workbook = writer.book
-        worksheet = writer.sheets['Previsao_Produtos']
+        worksheet = writer.sheets['Previsoes_Completas']
         
         # Formato para números
         number_format = workbook.add_format({'num_format': '#,##0'})
@@ -312,58 +312,15 @@ def to_excel_single(df):
         header_format = workbook.add_format({'bold': True})
         for col_num, value in enumerate(df.columns.values):
             worksheet.write(0, col_num, value, header_format)
+            
+        # Ajustar largura das colunas
+        worksheet.set_column('A:A', 30)  # Produto
+        worksheet.set_column('B:B', 10)  # Data
     
     output.seek(0)
     return output
 
-def to_excel_multiple(all_forecasts_df):
-    """Converte DataFrame para Excel com múltiplas abas (uma para cada mês)"""
-    output = BytesIO()
-    
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Agrupar por data
-        dates = sorted(all_forecasts_df['AnoMes'].unique())
-        
-        # Criar uma aba para cada mês
-        for date in dates:
-            month_data = all_forecasts_df[all_forecasts_df['AnoMes'] == date].copy()
-            month_data = month_data[['Produto', 'Data', 'Quantidade_Prevista']].sort_values('Quantidade_Prevista', ascending=False)
-            
-            sheet_name = date.strftime('%m_%Y')
-            month_data.to_excel(writer, sheet_name=sheet_name, index=False)
-            
-            # Formatação
-            workbook = writer.book
-            worksheet = writer.sheets[sheet_name]
-            
-            # Formato para números
-            number_format = workbook.add_format({'num_format': '#,##0'})
-            worksheet.set_column('C:C', 15, number_format)
-            
-            # Cabeçalho em negrito
-            header_format = workbook.add_format({'bold': True})
-            for col_num, value in enumerate(month_data.columns.values):
-                worksheet.write(0, col_num, value, header_format)
-                
-            # Ajustar largura das colunas
-            worksheet.set_column('A:A', 30)  # Produto
-            worksheet.set_column('B:B', 10)  # Data
-        
-        # Criar aba resumo com todos os dados
-        all_data_summary = all_forecasts_df[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Produto', 'Data'])
-        all_data_summary.to_excel(writer, sheet_name='Resumo_Completo', index=False)
-        
-        # Formatação da aba resumo
-        worksheet_resumo = writer.sheets['Resumo_Completo']
-        worksheet_resumo.set_column('A:A', 30)
-        worksheet_resumo.set_column('B:B', 10)
-        worksheet_resumo.set_column('C:C', 15, number_format)
-        
-        for col_num, value in enumerate(all_data_summary.columns.values):
-            worksheet_resumo.write(0, col_num, value, header_format)
-    
-    output.seek(0)
-    return output
+
 
 def show_export_section(df):
     """Seção para exportação de previsões por produto"""
