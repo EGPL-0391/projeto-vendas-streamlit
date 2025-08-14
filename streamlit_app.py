@@ -215,6 +215,102 @@ def create_plot(df, title):
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
 
+def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
+    """Cria gráfico de barras com as quantidades vendidas em ordem decrescente"""
+    try:
+        # Aplicar os mesmos filtros da análise principal
+        dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
+        dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
+        df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
+        
+        if df_filtered.empty:
+            return None
+        
+        # Determinar qual agrupamento usar baseado nos filtros
+        if cliente_atual != "TODOS" and produto_atual == "TODOS":
+            # Cliente específico - agrupar por produto
+            grouped = df_filtered.groupby('Produto')['Quantidade'].sum().reset_index()
+            grouped = grouped.sort_values('Quantidade', ascending=True)  # Para ter as maiores no topo
+            titulo = f"PRODUTOS MAIS VENDIDOS - {cliente_atual}"
+            x_label = "PRODUTO"
+            
+        elif grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+            # Linha específica - agrupar por cliente
+            grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
+            grouped = grouped.sort_values('Quantidade', ascending=True)
+            titulo = f"CLIENTES QUE MAIS COMPRARAM - LINHA {grupo_atual}"
+            x_label = "CLIENTE"
+            
+        elif produto_atual != "TODOS" and cliente_atual == "TODOS":
+            # Produto específico - agrupar por cliente
+            grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
+            grouped = grouped.sort_values('Quantidade', ascending=True)
+            titulo = f"CLIENTES QUE MAIS COMPRARAM - {produto_atual}"
+            x_label = "CLIENTE"
+            
+        elif cliente_atual == "TODOS" and produto_atual == "TODOS" and grupo_atual == "TODOS":
+            # Todos - agrupar por linha (grupo)
+            grouped = df_filtered.groupby('Grupo')['Quantidade'].sum().reset_index()
+            grouped = grouped.sort_values('Quantidade', ascending=True)
+            titulo = "LINHAS QUE MAIS VENDEM"
+            x_label = "LINHA"
+            
+        else:
+            # Caso específico de cliente + produto - agrupar por mês
+            grouped = df_filtered.groupby('AnoMes')['Quantidade'].sum().reset_index()
+            grouped['Mes_Ano'] = grouped['AnoMes'].dt.strftime('%m/%Y')
+            grouped = grouped.sort_values('Quantidade', ascending=True)
+            titulo = f"VENDAS MENSAIS - {cliente_atual} - {produto_atual}"
+            x_label = "MÊS"
+            grouped = grouped.rename(columns={'Mes_Ano': 'Label'})
+        
+        # Se não é o caso específico de mês, usar a primeira coluna como label
+        if 'Label' not in grouped.columns:
+            grouped['Label'] = grouped.iloc[:, 0]
+        
+        # Limitar a 20 itens para melhor visualização
+        if len(grouped) > 20:
+            grouped = grouped.tail(20)
+        
+        fig = px.bar(
+            grouped,
+            x='Quantidade',
+            y='Label',
+            orientation='h',
+            title=titulo.upper(),
+            labels={'Quantidade': 'QUANTIDADE VENDIDA', 'Label': x_label},
+            color='Quantidade',
+            color_continuous_scale='Blues'
+        )
+        
+        fig.update_layout(
+            title_x=0.5,
+            height=max(400, len(grouped) * 25),  # Altura dinâmica
+            xaxis=dict(
+                title='<b>QUANTIDADE VENDIDA</b>',
+                title_font=dict(size=14, color='black'),
+                tickfont=dict(size=12, color='black')
+            ),
+            yaxis=dict(
+                title=f'<b>{x_label}</b>',
+                title_font=dict(size=14, color='black'),
+                tickfont=dict(size=10, color='black')
+            ),
+            showlegend=False
+        )
+        
+        # Adicionar valores nas barras
+        fig.update_traces(
+            texttemplate='%{x:,.0f}',
+            textposition='outside'
+        )
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"❌ Erro ao criar gráfico de barras: {str(e)}")
+        return None
+
 def create_export_table(df, selected_date):
     """Cria tabela consolidada por produto para exportação - MESMA LÓGICA DO GRÁFICO"""
     export_data = []
@@ -451,6 +547,16 @@ def show_dashboard():
 
     fig = create_plot(resultado, titulo)
     st.plotly_chart(fig, use_container_width=True)
+
+    # === NOVO GRÁFICO DE BARRAS ===
+    st.markdown("---")
+    st.markdown("## 📊 ANÁLISE DE VENDAS POR RANKING")
+    
+    bar_fig = create_bar_chart(df, grupo, cliente, produto)
+    if bar_fig:
+        st.plotly_chart(bar_fig, use_container_width=True)
+    else:
+        st.warning("⚠️ Não foi possível gerar o gráfico de barras com os filtros aplicados.")
 
     st.divider()
 
