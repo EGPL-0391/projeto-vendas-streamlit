@@ -88,7 +88,8 @@ def show_login_page():
             if authenticate_user(usuario, senha):
                 st.session_state.authenticated = True
                 st.success("✅ Login realizado com sucesso!")
-                st.rerun()
+                st.balloons()  # Usar balloons em vez de rerun
+                st.experimental_rerun() if hasattr(st, 'experimental_rerun') else st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos!")
     
@@ -105,6 +106,9 @@ def authenticate_user(usuario, senha):
 
 def logout():
     """Realiza o logout do usuário"""
+    # Limpar todos os estados da sessão
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.session_state.authenticated = False
     st.rerun()
 
@@ -493,7 +497,7 @@ def show_dashboard():
         st.title("📊 PAINEL DE VENDAS E PREVISÃO")
     with col2:
         st.markdown("### 👤 Usuário: comercial")
-        if st.button("🚪 SAIR", type="secondary"):
+        if st.button("🚪 SAIR", type="secondary", key="logout_btn"):
             logout()
 
     @st.cache_data
@@ -508,13 +512,44 @@ def show_dashboard():
     # === SEÇÃO PRINCIPAL DE GRÁFICOS ===
     st.markdown("## 📈 ANÁLISE GRÁFICA")
     
-    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()))
+    # Usar session_state para preservar os filtros
+    if 'grupo_selecionado' not in st.session_state:
+        st.session_state.grupo_selecionado = "TODOS"
+    if 'cliente_selecionado' not in st.session_state:
+        st.session_state.cliente_selecionado = "TODOS"
+    if 'produto_selecionado' not in st.session_state:
+        st.session_state.produto_selecionado = "TODOS"
+    
+    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()), 
+                        index=0 if st.session_state.grupo_selecionado == "TODOS" else 
+                        (["TODOS"] + sorted(df['Grupo'].unique())).index(st.session_state.grupo_selecionado) 
+                        if st.session_state.grupo_selecionado in df['Grupo'].unique() else 0,
+                        key="grupo_select")
+    st.session_state.grupo_selecionado = grupo
+    
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
-    cliente = st.selectbox("SELECIONE O CLIENTE", ["TODOS"] + sorted(dfg['Cliente'].unique()))
+    # Resetar cliente e produto se o grupo mudou
+    clientes_disponiveis = ["TODOS"] + sorted(dfg['Cliente'].unique())
+    if st.session_state.cliente_selecionado not in clientes_disponiveis:
+        st.session_state.cliente_selecionado = "TODOS"
+    
+    cliente = st.selectbox("SELECIONE O CLIENTE", clientes_disponiveis,
+                          index=clientes_disponiveis.index(st.session_state.cliente_selecionado),
+                          key="cliente_select")
+    st.session_state.cliente_selecionado = cliente
+    
     dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
 
-    produto = st.selectbox("SELECIONE O PRODUTO", ["TODOS"] + sorted(dfc['Produto'].unique()))
+    # Resetar produto se o cliente mudou
+    produtos_disponiveis = ["TODOS"] + sorted(dfc['Produto'].unique())
+    if st.session_state.produto_selecionado not in produtos_disponiveis:
+        st.session_state.produto_selecionado = "TODOS"
+
+    produto = st.selectbox("SELECIONE O PRODUTO", produtos_disponiveis,
+                          index=produtos_disponiveis.index(st.session_state.produto_selecionado),
+                          key="produto_select")
+    st.session_state.produto_selecionado = produto
     dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
 
     if dff.empty:
