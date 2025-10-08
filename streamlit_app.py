@@ -178,32 +178,13 @@ def main():
                 return
 
             if forecast_data is not None:
-                # Filtro de mês/ano para previsões
-                previsoes = forecast_data[forecast_data['Previsao'] == 'PREVISÃO']
-                if not previsoes.empty:
-                    datas_previsao = sorted(previsoes['AnoMes'].unique())
-                    opcoes_data = ['TODAS'] + [d.strftime('%m/%Y') for d in datas_previsao]
-                    
-                    filtro_data = st.selectbox("FILTRAR PREVISÃO POR MÊS/ANO", opcoes_data)
-                    
-                    if filtro_data != 'TODAS':
-                        data_selecionada = pd.to_datetime(filtro_data, format='%m/%Y')
-                        forecast_data_filtrada = pd.concat([
-                            forecast_data[forecast_data['Previsao'] == 'HISTÓRICO'],
-                            forecast_data[(forecast_data['Previsao'] == 'PREVISÃO') & (forecast_data['AnoMes'] == data_selecionada)]
-                        ], ignore_index=True)
-                    else:
-                        forecast_data_filtrada = forecast_data
-                else:
-                    forecast_data_filtrada = forecast_data
-
-                fig = create_plot(forecast_data_filtrada, f"{cliente} - {produto}")
+                fig = create_plot(forecast_data, f"{cliente} - {produto}")
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
 
                 with st.expander("📈 ESTATÍSTICAS"):
-                    historico = forecast_data_filtrada[forecast_data_filtrada['Previsao'] == 'HISTÓRICO']
-                    previsao = forecast_data_filtrada[forecast_data_filtrada['Previsao'] == 'PREVISÃO']
+                    historico = forecast_data[forecast_data['Previsao'] == 'HISTÓRICO']
+                    previsao = forecast_data[forecast_data['Previsao'] == 'PREVISÃO']
 
                     st.write("📊 HISTÓRICO:")
                     st.write("- TOTAL:", historico['Quantidade'].sum())
