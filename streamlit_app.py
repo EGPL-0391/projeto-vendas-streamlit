@@ -163,7 +163,7 @@ def main():
 
     if cliente:
         produtos = sorted(data[data['Cliente'] == cliente]['Produto'].unique())
-        if não produtos:
+        if not produtos:
             st.error(f"❌ Cliente '{cliente}' não possui produtos.")
             st.stop()
 
