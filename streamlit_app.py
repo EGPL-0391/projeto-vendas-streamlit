@@ -632,3 +632,43 @@ def main():
 
 if __name__ == "__main__":
     main()
+def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
+    """Seção para exportação de previsões - OBEDECE OS MESMOS FILTROS DA ANÁLISE GRÁFICA"""
+    st.markdown("---")
+    st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
+    
+    # Mostrar filtros aplicados
+    st.info(f"📊 **Filtros Aplicados:** Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}")
+    
+    # Aplicar os mesmos filtros da análise gráfica
+    dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
+    dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
+    df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
+    
+    if not df_filtered.empty:
+        # Gerar tabela completa com todas as previsões
+        all_forecasts = create_all_forecasts_table(df_filtered)
+        
+        if not all_forecasts.empty:
+            # NOVO: Filtro de mês específico
+            st.markdown("### 📅 SELECIONE O PERÍODO DE EXPORTAÇÃO")
+            
+            col_filtro1, col_filtro2 = st.columns(2)
+            
+            with col_filtro1:
+                meses_disponiveis = sorted(all_forecasts['Data'].unique())
+                opcoes_exportacao = ["TODOS OS MESES (6 MESES)"] + meses_disponiveis
+                
+                mes_selecionado = st.selectbox(
+                    "Escolha o mês para exportar:",
+                    opcoes_exportacao,
+                    key="mes_exportacao"
+                )
+            
+            # Filtrar por mês se selecionado
+            if mes_selecionado != "TODOS OS MESES (6 MESES)":
+                all_forecasts_filtered = all_forecasts[all_forecasts['Data'] == mes_selecionado].copy()
+                periodo_label = mes_selecionado
+            else:
+                all_forecasts_filtered = all_forecasts.copy()
+                periodo_label = "6_meses"
