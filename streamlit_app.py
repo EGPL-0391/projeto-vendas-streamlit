@@ -40,7 +40,6 @@ def show_login_page():
     """Exibe a página de login"""
     st.set_page_config(page_title="LOGIN - PAINEL DE VENDAS", layout="centered")
     
-    # CSS para estilizar o formulário de login
     st.markdown("""
     <style>
     .login-container {
@@ -88,14 +87,13 @@ def show_login_page():
             if authenticate_user(usuario, senha):
                 st.session_state.authenticated = True
                 st.success("✅ Login realizado com sucesso!")
-                st.balloons()  # Usar balloons em vez de rerun
+                st.balloons()
                 st.experimental_rerun() if hasattr(st, 'experimental_rerun') else st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos!")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Informações adicionais
     st.markdown("---")
     st.markdown("### ℹ️ INFORMAÇÕES DO SISTEMA")
     st.info("Sistema de análise de vendas e previsões para tomada de decisões comerciais.")
@@ -106,7 +104,6 @@ def authenticate_user(usuario, senha):
 
 def logout():
     """Realiza o logout do usuário"""
-    # Limpar todos os estados da sessão
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.session_state.authenticated = False
@@ -194,7 +191,6 @@ def create_plot(df, title):
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
 
-        # Cores: histórico (preto), previsão (vermelho)
         fig.for_each_trace(
             lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
         )
@@ -222,7 +218,6 @@ def create_plot(df, title):
 def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
     """Cria gráfico de barras com as quantidades vendidas em ordem decrescente"""
     try:
-        # Aplicar os mesmos filtros da análise principal
         dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
         dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
         df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
@@ -230,37 +225,31 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
         if df_filtered.empty:
             return None
         
-        # Determinar qual agrupamento usar baseado nos filtros
         if cliente_atual != "TODOS" and produto_atual == "TODOS":
-            # Cliente específico - agrupar por produto
             grouped = df_filtered.groupby('Produto')['Quantidade'].sum().reset_index()
-            grouped = grouped.sort_values('Quantidade', ascending=True)  # Para ter as maiores no topo
+            grouped = grouped.sort_values('Quantidade', ascending=True)
             titulo = f"PRODUTOS MAIS VENDIDOS - {cliente_atual}"
             x_label = "PRODUTO"
             
         elif grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
-            # Linha específica - agrupar por cliente
             grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
             titulo = f"CLIENTES QUE MAIS COMPRARAM - LINHA {grupo_atual}"
             x_label = "CLIENTE"
             
         elif produto_atual != "TODOS" and cliente_atual == "TODOS":
-            # Produto específico - agrupar por cliente
             grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
             titulo = f"CLIENTES QUE MAIS COMPRARAM - {produto_atual}"
             x_label = "CLIENTE"
             
         elif cliente_atual == "TODOS" and produto_atual == "TODOS" and grupo_atual == "TODOS":
-            # Todos - agrupar por linha (grupo)
             grouped = df_filtered.groupby('Grupo')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
             titulo = "LINHAS QUE MAIS VENDEM"
             x_label = "LINHA"
             
         else:
-            # Caso específico de cliente + produto - agrupar por mês
             grouped = df_filtered.groupby('AnoMes')['Quantidade'].sum().reset_index()
             grouped['Mes_Ano'] = grouped['AnoMes'].dt.strftime('%m/%Y')
             grouped = grouped.sort_values('Quantidade', ascending=True)
@@ -268,11 +257,9 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
             x_label = "MÊS"
             grouped = grouped.rename(columns={'Mes_Ano': 'Label'})
         
-        # Se não é o caso específico de mês, usar a primeira coluna como label
         if 'Label' not in grouped.columns:
             grouped['Label'] = grouped.iloc[:, 0]
         
-        # Limitar a 20 itens para melhor visualização
         if len(grouped) > 20:
             grouped = grouped.tail(20)
         
@@ -289,7 +276,7 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
         
         fig.update_layout(
             title_x=0.5,
-            height=max(400, len(grouped) * 25),  # Altura dinâmica
+            height=max(400, len(grouped) * 25),
             xaxis=dict(
                 title='<b>QUANTIDADE VENDIDA</b>',
                 title_font=dict(size=14, color='black'),
@@ -303,7 +290,6 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
             showlegend=False
         )
         
-        # Adicionar valores nas barras
         fig.update_traces(
             texttemplate='%{x:,.0f}',
             textposition='outside'
@@ -322,21 +308,15 @@ def create_export_table(df, selected_date):
     
     for produto in produtos:
         df_produto = df[df['Produto'] == produto]
-        
-        # MESMA LÓGICA DO GRÁFICO PRINCIPAL
         grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
         
         if len(grouped) < 2:
             continue
         
-        # Criar série exatamente como no gráfico
         serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
         
         try:
-            # MESMA FUNÇÃO DE PREVISÃO DO GRÁFICO
             fc = make_forecast_from_series(serie)
-            
-            # Procurar pela data selecionada
             previsao_mes = fc[fc['AnoMes'] == selected_date]
             
             if not previsao_mes.empty:
@@ -357,7 +337,6 @@ def create_all_forecasts_table(df):
     all_forecasts = []
     produtos = df['Produto'].unique()
     
-    # Calcular datas de previsão
     max_date = df['AnoMes'].max()
     forecast_dates = []
     for i in range(1, FORECAST_MONTHS + 1):
@@ -376,7 +355,6 @@ def create_all_forecasts_table(df):
         try:
             fc = make_forecast_from_series(serie)
             
-            # Para cada mês de previsão
             for forecast_date in forecast_dates:
                 previsao_mes = fc[fc['AnoMes'] == forecast_date]
                 
@@ -400,98 +378,126 @@ def to_excel_single(df):
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Previsoes_Completas', index=False)
         
-        # Formatação básica
         workbook = writer.book
         worksheet = writer.sheets['Previsoes_Completas']
         
-        # Formato para números
         number_format = workbook.add_format({'num_format': '#,##0'})
         worksheet.set_column('C:C', 15, number_format)
         
-        # Cabeçalho em negrito
         header_format = workbook.add_format({'bold': True})
         for col_num, value in enumerate(df.columns.values):
             worksheet.write(0, col_num, value, header_format)
             
-        # Ajustar largura das colunas
-        worksheet.set_column('A:A', 30)  # Produto
-        worksheet.set_column('B:B', 10)  # Data
+        worksheet.set_column('A:A', 30)
+        worksheet.set_column('B:B', 10)
     
     output.seek(0)
     return output
-
 
 
 def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
     """Seção para exportação de previsões - OBEDECE OS MESMOS FILTROS DA ANÁLISE GRÁFICA"""
     st.markdown("---")
     st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
-    
+
     # Mostrar filtros aplicados
     st.info(f"📊 **Filtros Aplicados:** Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}")
-    
+
     # Aplicar os mesmos filtros da análise gráfica
     dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
     dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
     df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
-    
-    if not df_filtered.empty:
-        # Gerar tabela completa com todas as previsões
-        all_forecasts = create_all_forecasts_table(df_filtered)
-        
-        if not all_forecasts.empty:
-            # Mostrar resumo
-            total_produtos = len(all_forecasts['Produto'].unique())
-            total_previsoes = len(all_forecasts)
-            meses_previstos = len(all_forecasts['Data'].unique())
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("🎯 PRODUTOS", total_produtos)
-            col2.metric("📅 MESES", meses_previstos)
-            col3.metric("📊 TOTAL PREVISÕES", total_previsoes)
-            
-            # Nome do arquivo baseado nos filtros
-            if grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
-                filename_suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
-            elif cliente_atual != "TODOS" and produto_atual == "TODOS":
-                filename_suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
-            elif cliente_atual == "TODOS" and produto_atual != "TODOS":
-                filename_suffix = f"produto_{produto_atual.replace(' ', '_')}"
-            elif cliente_atual != "TODOS" and produto_atual != "TODOS":
-                filename_suffix = f"{cliente_atual.replace(' ', '_')}_{produto_atual.replace(' ', '_')}"
-            else:
-                filename_suffix = "todos"
-            
-            # Botão de download
-            excel_complete = to_excel_single(all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False]))
-            filename_complete = f"previsoes_{filename_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
-            
-            st.download_button(
-                label="📥 BAIXAR PREVISÕES (6 MESES)",
-                data=excel_complete,
-                file_name=filename_complete,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                help="Arquivo Excel com previsões baseadas nos filtros aplicados"
-            )
-            
-            # Preview dos dados completos
-            with st.expander("👀 PREVIEW DOS DADOS PARA EXPORTAÇÃO"):
-                st.dataframe(
-                    all_forecasts[['Produto', 'Data', 'Quantidade_Prevista']].sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False]),
-                    use_container_width=True
-                )
-            
-        else:
-            st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
-    else:
+
+    if df_filtered.empty:
         st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
+        return
+
+    # Gerar tabela completa com todas as previsões (6 meses)
+    all_forecasts = create_all_forecasts_table(df_filtered)
+
+    if all_forecasts.empty:
+        st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
+        return
+
+    # === FILTRO DE DATAS ===
+    st.markdown("### 📅 SELECIONE OS MESES PARA EXPORTAÇÃO")
+
+    # Extrair datas únicas disponíveis nas previsões ordenadas cronologicamente
+    datas_disponiveis = sorted(
+        all_forecasts['Data'].unique(),
+        key=lambda d: pd.to_datetime(d, format='%m/%Y')
+    )
+
+    col_filtro1, col_filtro2 = st.columns([3, 1])
+
+    with col_filtro1:
+        datas_selecionadas = st.multiselect(
+            "MÊS(ES) DE PREVISÃO",
+            options=datas_disponiveis,
+            default=datas_disponiveis,
+            help="Selecione um ou mais meses para filtrar a exportação"
+        )
+
+    with col_filtro2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 SELECIONAR TODOS", use_container_width=True):
+            datas_selecionadas = datas_disponiveis
+
+    if not datas_selecionadas:
+        st.warning("⚠️ Selecione ao menos um mês para exportar.")
+        return
+
+    # Aplicar filtro de datas
+    df_export = all_forecasts[all_forecasts['Data'].isin(datas_selecionadas)]
+
+    # === MÉTRICAS ===
+    total_produtos  = len(df_export['Produto'].unique())
+    total_previsoes = len(df_export)
+    meses_previstos = len(df_export['Data'].unique())
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🎯 PRODUTOS",           total_produtos)
+    col2.metric("📅 MESES SELECIONADOS", meses_previstos)
+    col3.metric("📊 TOTAL PREVISÕES",    total_previsoes)
+
+    # === NOME DO ARQUIVO ===
+    if grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+        filename_suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
+    elif cliente_atual != "TODOS" and produto_atual == "TODOS":
+        filename_suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
+    elif cliente_atual == "TODOS" and produto_atual != "TODOS":
+        filename_suffix = f"produto_{produto_atual.replace(' ', '_')}"
+    elif cliente_atual != "TODOS" and produto_atual != "TODOS":
+        filename_suffix = f"{cliente_atual.replace(' ', '_')}_{produto_atual.replace(' ', '_')}"
+    else:
+        filename_suffix = "todos"
+
+    # === DOWNLOAD ===
+    df_ordenado = (
+        df_export[['Produto', 'Data', 'Quantidade_Prevista']]
+        .sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False])
+    )
+    excel_bytes   = to_excel_single(df_ordenado)
+    filename_xlsx = f"previsoes_{filename_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+    st.download_button(
+        label="📥 BAIXAR PREVISÕES SELECIONADAS",
+        data=excel_bytes,
+        file_name=filename_xlsx,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        help="Exporta apenas os meses selecionados no filtro acima"
+    )
+
+    # === PREVIEW ===
+    with st.expander("👀 PREVIEW DOS DADOS PARA EXPORTAÇÃO"):
+        st.dataframe(df_ordenado, use_container_width=True)
+
 
 def show_dashboard():
     """Exibe o dashboard principal após autenticação"""
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
     
-    # Header com botão de logout
     col1, col2 = st.columns([4, 1])
     with col1:
         st.title("📊 PAINEL DE VENDAS E PREVISÃO")
@@ -512,7 +518,6 @@ def show_dashboard():
     # === SEÇÃO PRINCIPAL DE GRÁFICOS ===
     st.markdown("## 📈 ANÁLISE GRÁFICA")
     
-    # Usar session_state para preservar os filtros
     if 'grupo_selecionado' not in st.session_state:
         st.session_state.grupo_selecionado = "TODOS"
     if 'cliente_selecionado' not in st.session_state:
@@ -529,7 +534,6 @@ def show_dashboard():
     
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
-    # Resetar cliente e produto se o grupo mudou
     clientes_disponiveis = ["TODOS"] + sorted(dfg['Cliente'].unique())
     if st.session_state.cliente_selecionado not in clientes_disponiveis:
         st.session_state.cliente_selecionado = "TODOS"
@@ -541,7 +545,6 @@ def show_dashboard():
     
     dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
 
-    # Resetar produto se o cliente mudou
     produtos_disponiveis = ["TODOS"] + sorted(dfc['Produto'].unique())
     if st.session_state.produto_selecionado not in produtos_disponiveis:
         st.session_state.produto_selecionado = "TODOS"
@@ -583,7 +586,7 @@ def show_dashboard():
     fig = create_plot(resultado, titulo)
     st.plotly_chart(fig, use_container_width=True)
 
-    # === NOVO GRÁFICO DE BARRAS ===
+    # === GRÁFICO DE BARRAS ===
     st.markdown("---")
     st.markdown("## 📊 ANÁLISE DE VENDAS POR RANKING")
     
@@ -597,37 +600,35 @@ def show_dashboard():
 
     with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
         historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
-        previsao = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
+        previsao  = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
 
         st.subheader("📊 HISTÓRICO")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total", f"{historico.sum():,.0f}")
-        col2.metric("Média", f"{historico.mean():.2f}")
-        col3.metric("Mediana", f"{historico.median():.0f}")
+        col1.metric("Total",         f"{historico.sum():,.0f}")
+        col2.metric("Média",         f"{historico.mean():.2f}")
+        col3.metric("Mediana",       f"{historico.median():.0f}")
         col4.metric("Desvio Padrão", f"{historico.std():.2f}")
 
         st.markdown("")
 
         st.subheader("📈 PREVISÃO")
         col5, col6, col7, col8 = st.columns(4)
-        col5.metric("Total Previsto", f"{previsao.sum():,.0f}")
-        col6.metric("Média Prevista", f"{previsao.mean():.2f}")
+        col5.metric("Total Previsto",   f"{previsao.sum():,.0f}")
+        col6.metric("Média Prevista",   f"{previsao.mean():.2f}")
         col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
-        col8.metric("Desvio Padrão", f"{previsao.std():.2f}")
+        col8.metric("Desvio Padrão",    f"{previsao.std():.2f}")
 
         st.markdown("")
         st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
 
-    # === NOVA SEÇÃO DE EXPORTAÇÃO ===
+    # === SEÇÃO DE EXPORTAÇÃO ===
     show_export_section(df, grupo, cliente, produto)
+
 
 def main():
     """Função principal que controla o fluxo da aplicação"""
-    # Verifica autenticação
     if not check_authentication():
         return
-    
-    # Se autenticado, mostra o dashboard
     show_dashboard()
 
 if __name__ == "__main__":
