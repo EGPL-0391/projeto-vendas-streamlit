@@ -27,19 +27,16 @@ USUARIOS = {
 }
 
 def check_authentication():
-    """Verifica se o usuário está autenticado"""
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
-    
     if not st.session_state.authenticated:
         show_login_page()
         return False
     return True
 
 def show_login_page():
-    """Exibe a página de login"""
     st.set_page_config(page_title="LOGIN - PAINEL DE VENDAS", layout="centered")
-    
+
     st.markdown("""
     <style>
     .login-container {
@@ -69,20 +66,20 @@ def show_login_page():
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
     st.markdown('<div class="login-container">', unsafe_allow_html=True)
     st.markdown('<h1 class="login-title">🔐 ACESSO AO SISTEMA</h1>', unsafe_allow_html=True)
     st.markdown('<h3 class="login-title">PAINEL DE VENDAS</h3>', unsafe_allow_html=True)
-    
+
     with st.form("login_form"):
         st.markdown("### 👤 CREDENCIAIS")
         usuario = st.text_input("USUÁRIO", placeholder="Digite seu usuário")
         senha = st.text_input("SENHA", type="password", placeholder="Digite sua senha")
-        
+
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             submit_button = st.form_submit_button("🚀 ENTRAR")
-        
+
         if submit_button:
             if authenticate_user(usuario, senha):
                 st.session_state.authenticated = True
@@ -91,19 +88,16 @@ def show_login_page():
                 st.experimental_rerun() if hasattr(st, 'experimental_rerun') else st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos!")
-    
+
     st.markdown('</div>', unsafe_allow_html=True)
-    
     st.markdown("---")
     st.markdown("### ℹ️ INFORMAÇÕES DO SISTEMA")
     st.info("Sistema de análise de vendas e previsões para tomada de decisões comerciais.")
 
 def authenticate_user(usuario, senha):
-    """Autentica o usuário"""
     return usuario in USUARIOS and USUARIOS[usuario] == senha
 
 def logout():
-    """Realiza o logout do usuário"""
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.session_state.authenticated = False
@@ -148,9 +142,9 @@ def load_data():
             st.stop()
         cols[c] = fc
 
-    df[cols['Cliente']] = df[cols['Cliente']].astype(str).str.strip().str.upper()
-    df[cols['Produto']] = df[cols['Produto']].astype(str).str.strip().str.upper()
-    df[cols['Emissao']] = pd.to_datetime(df[cols['Emissao']], errors='coerce')
+    df[cols['Cliente']]    = df[cols['Cliente']].astype(str).str.strip().str.upper()
+    df[cols['Produto']]    = df[cols['Produto']].astype(str).str.strip().str.upper()
+    df[cols['Emissao']]    = pd.to_datetime(df[cols['Emissao']], errors='coerce')
     df[cols['Quantidade']] = pd.to_numeric(df[cols['Quantidade']], errors='coerce')
 
     df = df.dropna(subset=[cols['Emissao'], cols['Cliente'], cols['Produto'], cols['Quantidade']])
@@ -170,8 +164,14 @@ def load_data():
     return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
 
 def make_forecast_from_series(serie):
-    m = ExponentialSmoothing(serie, trend='add', damped_trend=True, seasonal=None, initialization_method='estimated').fit()
-    idx = pd.date_range(start=serie.index[-1] + pd.offsets.MonthBegin(), periods=FORECAST_MONTHS, freq='MS')
+    m = ExponentialSmoothing(
+        serie, trend='add', damped_trend=True,
+        seasonal=None, initialization_method='estimated'
+    ).fit()
+    idx = pd.date_range(
+        start=serie.index[-1] + pd.offsets.MonthBegin(),
+        periods=FORECAST_MONTHS, freq='MS'
+    )
     fc = (m.forecast(FORECAST_MONTHS) * REDUCTION_FACTOR).round().astype(int)
     fc.index = idx
     df = fc.reset_index()
@@ -182,228 +182,145 @@ def make_forecast_from_series(serie):
 def create_plot(df, title):
     try:
         fig = px.line(
-            df,
-            x='AnoMes',
-            y='Quantidade',
-            color='Previsao',
-            title=title.upper(),
-            markers=True,
+            df, x='AnoMes', y='Quantidade', color='Previsao',
+            title=title.upper(), markers=True,
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
-
         fig.for_each_trace(
-            lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
+            lambda t: t.update(line=dict(color='black'))
+            if t.name == 'HISTÓRICO' else t.update(line=dict(color='red'))
         )
-
         fig.update_layout(
-            title_x=0.5,
-            hovermode='x unified',
-            xaxis=dict(
-                title='<b>MÊS</b>',
-                title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black')
-            ),
-            yaxis=dict(
-                title='<b>QUANTIDADE</b>',
-                title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black')
-            )
+            title_x=0.5, hovermode='x unified',
+            xaxis=dict(title='<b>MÊS</b>', title_font=dict(size=14, color='black'), tickfont=dict(size=12, color='black')),
+            yaxis=dict(title='<b>QUANTIDADE</b>', title_font=dict(size=14, color='black'), tickfont=dict(size=12, color='black'))
         )
-
         return fig
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico: {str(e)}")
         return None
 
 def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
-    """Cria gráfico de barras com as quantidades vendidas em ordem decrescente"""
     try:
         dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
         dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
         df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
-        
+
         if df_filtered.empty:
             return None
-        
+
         if cliente_atual != "TODOS" and produto_atual == "TODOS":
             grouped = df_filtered.groupby('Produto')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
-            titulo = f"PRODUTOS MAIS VENDIDOS - {cliente_atual}"
+            titulo  = f"PRODUTOS MAIS VENDIDOS - {cliente_atual}"
             x_label = "PRODUTO"
-            
         elif grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
             grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
-            titulo = f"CLIENTES QUE MAIS COMPRARAM - LINHA {grupo_atual}"
+            titulo  = f"CLIENTES QUE MAIS COMPRARAM - LINHA {grupo_atual}"
             x_label = "CLIENTE"
-            
         elif produto_atual != "TODOS" and cliente_atual == "TODOS":
             grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
-            titulo = f"CLIENTES QUE MAIS COMPRARAM - {produto_atual}"
+            titulo  = f"CLIENTES QUE MAIS COMPRARAM - {produto_atual}"
             x_label = "CLIENTE"
-            
         elif cliente_atual == "TODOS" and produto_atual == "TODOS" and grupo_atual == "TODOS":
             grouped = df_filtered.groupby('Grupo')['Quantidade'].sum().reset_index()
             grouped = grouped.sort_values('Quantidade', ascending=True)
-            titulo = "LINHAS QUE MAIS VENDEM"
+            titulo  = "LINHAS QUE MAIS VENDEM"
             x_label = "LINHA"
-            
         else:
             grouped = df_filtered.groupby('AnoMes')['Quantidade'].sum().reset_index()
             grouped['Mes_Ano'] = grouped['AnoMes'].dt.strftime('%m/%Y')
             grouped = grouped.sort_values('Quantidade', ascending=True)
-            titulo = f"VENDAS MENSAIS - {cliente_atual} - {produto_atual}"
+            titulo  = f"VENDAS MENSAIS - {cliente_atual} - {produto_atual}"
             x_label = "MÊS"
             grouped = grouped.rename(columns={'Mes_Ano': 'Label'})
-        
+
         if 'Label' not in grouped.columns:
             grouped['Label'] = grouped.iloc[:, 0]
-        
+
         if len(grouped) > 20:
             grouped = grouped.tail(20)
-        
+
         fig = px.bar(
-            grouped,
-            x='Quantidade',
-            y='Label',
-            orientation='h',
+            grouped, x='Quantidade', y='Label', orientation='h',
             title=titulo.upper(),
             labels={'Quantidade': 'QUANTIDADE VENDIDA', 'Label': x_label},
-            color='Quantidade',
-            color_continuous_scale='Blues'
+            color='Quantidade', color_continuous_scale='Blues'
         )
-        
         fig.update_layout(
             title_x=0.5,
             height=max(400, len(grouped) * 25),
-            xaxis=dict(
-                title='<b>QUANTIDADE VENDIDA</b>',
-                title_font=dict(size=14, color='black'),
-                tickfont=dict(size=12, color='black')
-            ),
-            yaxis=dict(
-                title=f'<b>{x_label}</b>',
-                title_font=dict(size=14, color='black'),
-                tickfont=dict(size=10, color='black')
-            ),
+            xaxis=dict(title='<b>QUANTIDADE VENDIDA</b>', title_font=dict(size=14, color='black'), tickfont=dict(size=12, color='black')),
+            yaxis=dict(title=f'<b>{x_label}</b>', title_font=dict(size=14, color='black'), tickfont=dict(size=10, color='black')),
             showlegend=False
         )
-        
-        fig.update_traces(
-            texttemplate='%{x:,.0f}',
-            textposition='outside'
-        )
-        
+        fig.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
         return fig
-        
+
     except Exception as e:
         st.error(f"❌ Erro ao criar gráfico de barras: {str(e)}")
         return None
 
-def create_export_table(df, selected_date):
-    """Cria tabela consolidada por produto para exportação - MESMA LÓGICA DO GRÁFICO"""
-    export_data = []
-    produtos = df['Produto'].unique()
-    
-    for produto in produtos:
-        df_produto = df[df['Produto'] == produto]
-        grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
-        
-        if len(grouped) < 2:
-            continue
-        
-        serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
-        
-        try:
-            fc = make_forecast_from_series(serie)
-            previsao_mes = fc[fc['AnoMes'] == selected_date]
-            
-            if not previsao_mes.empty:
-                quantidade_prevista = int(previsao_mes['Quantidade'].iloc[0])
-                if quantidade_prevista > 0:
-                    export_data.append({
-                        'Produto': produto,
-                        'Data': selected_date.strftime('%m/%Y'),
-                        'Quantidade_Prevista': quantidade_prevista
-                    })
-        except:
-            continue
-    
-    return pd.DataFrame(export_data)
-
 def create_all_forecasts_table(df):
-    """Cria tabela com TODAS as previsões para todos os produtos"""
     all_forecasts = []
-    produtos = df['Produto'].unique()
-    
-    max_date = df['AnoMes'].max()
-    forecast_dates = []
-    for i in range(1, FORECAST_MONTHS + 1):
-        future_date = max_date + pd.DateOffset(months=i)
-        forecast_dates.append(future_date)
-    
+    produtos      = df['Produto'].unique()
+    max_date      = df['AnoMes'].max()
+    forecast_dates = [max_date + pd.DateOffset(months=i) for i in range(1, FORECAST_MONTHS + 1)]
+
     for produto in produtos:
         df_produto = df[df['Produto'] == produto]
-        grouped = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
-        
+        grouped    = df_produto.groupby('AnoMes', as_index=False)['Quantidade'].sum()
+
         if len(grouped) < 2:
             continue
-        
+
         serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
-        
+
         try:
             fc = make_forecast_from_series(serie)
-            
             for forecast_date in forecast_dates:
                 previsao_mes = fc[fc['AnoMes'] == forecast_date]
-                
                 if not previsao_mes.empty:
-                    quantidade_prevista = int(previsao_mes['Quantidade'].iloc[0])
-                    if quantidade_prevista > 0:
+                    qtd = int(previsao_mes['Quantidade'].iloc[0])
+                    if qtd > 0:
                         all_forecasts.append({
-                            'Produto': produto,
-                            'Data': forecast_date.strftime('%m/%Y'),
-                            'AnoMes': forecast_date,
-                            'Quantidade_Prevista': quantidade_prevista
+                            'Produto':             produto,
+                            'Data':                forecast_date.strftime('%m/%Y'),
+                            'AnoMes':              forecast_date,
+                            'Quantidade_Prevista':  qtd
                         })
         except:
             continue
-    
+
     return pd.DataFrame(all_forecasts)
 
 def to_excel_single(df):
-    """Converte DataFrame para Excel em memória - versão simples"""
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, sheet_name='Previsoes_Completas', index=False)
-        
-        workbook = writer.book
+        workbook  = writer.book
         worksheet = writer.sheets['Previsoes_Completas']
-        
-        number_format = workbook.add_format({'num_format': '#,##0'})
-        worksheet.set_column('C:C', 15, number_format)
-        
-        header_format = workbook.add_format({'bold': True})
-        for col_num, value in enumerate(df.columns.values):
-            worksheet.write(0, col_num, value, header_format)
-            
         worksheet.set_column('A:A', 30)
         worksheet.set_column('B:B', 10)
-    
+        worksheet.set_column('C:C', 15, workbook.add_format({'num_format': '#,##0'}))
+        hfmt = workbook.add_format({'bold': True})
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num, value, hfmt)
     output.seek(0)
     return output
 
 
+# ============================================================
+# EXPORTAÇÃO COM FILTRO DE INTERVALO DE DATAS (DE / ATÉ)
+# ============================================================
 def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
-    """Seção para exportação de previsões - OBEDECE OS MESMOS FILTROS DA ANÁLISE GRÁFICA"""
     st.markdown("---")
     st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
-
-    # Mostrar filtros aplicados
     st.info(f"📊 **Filtros Aplicados:** Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}")
 
-    # Aplicar os mesmos filtros da análise gráfica
+    # Aplicar filtros de linha / cliente / produto
     dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
     dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
     df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
@@ -412,92 +329,103 @@ def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
         st.warning("⚠️ Nenhum dado disponível com os filtros aplicados.")
         return
 
-    # Gerar tabela completa com todas as previsões (6 meses)
     all_forecasts = create_all_forecasts_table(df_filtered)
 
     if all_forecasts.empty:
         st.warning("⚠️ Nenhuma previsão disponível com os filtros aplicados.")
         return
 
-    # === FILTRO DE DATAS ===
-    st.markdown("### 📅 SELECIONE OS MESES PARA EXPORTAÇÃO")
-
-    # Extrair datas únicas disponíveis nas previsões ordenadas cronologicamente
+    # Datas disponíveis ordenadas cronologicamente
     datas_disponiveis = sorted(
         all_forecasts['Data'].unique(),
         key=lambda d: pd.to_datetime(d, format='%m/%Y')
     )
 
-    col_filtro1, col_filtro2 = st.columns([3, 1])
+    # === FILTRO DE / ATÉ ===
+    st.markdown("### 📅 PERÍODO DE EXPORTAÇÃO")
 
-    with col_filtro1:
-        datas_selecionadas = st.multiselect(
-            "MÊS(ES) DE PREVISÃO",
+    col_de, col_ate = st.columns(2)
+
+    with col_de:
+        data_inicio = st.selectbox(
+            "🗓️ DE",
             options=datas_disponiveis,
-            default=datas_disponiveis,
-            help="Selecione um ou mais meses para filtrar a exportação"
+            index=0,
+            key="export_data_inicio"
         )
 
-    with col_filtro2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 SELECIONAR TODOS", use_container_width=True):
-            datas_selecionadas = datas_disponiveis
+    with col_ate:
+        # Opções do "Até" respeitam o mês de início
+        opcoes_ate = [
+            d for d in datas_disponiveis
+            if pd.to_datetime(d, format='%m/%Y') >= pd.to_datetime(data_inicio, format='%m/%Y')
+        ]
+        data_fim = st.selectbox(
+            "🗓️ ATÉ",
+            options=opcoes_ate,
+            index=len(opcoes_ate) - 1,  # último mês por padrão
+            key="export_data_fim"
+        )
 
-    if not datas_selecionadas:
-        st.warning("⚠️ Selecione ao menos um mês para exportar.")
+    # Filtrar pelo intervalo
+    dt_inicio = pd.to_datetime(data_inicio, format='%m/%Y')
+    dt_fim    = pd.to_datetime(data_fim,    format='%m/%Y')
+
+    df_export = all_forecasts[
+        (all_forecasts['AnoMes'] >= dt_inicio) &
+        (all_forecasts['AnoMes'] <= dt_fim)
+    ]
+
+    if df_export.empty:
+        st.warning("⚠️ Nenhuma previsão no intervalo selecionado.")
         return
 
-    # Aplicar filtro de datas
-    df_export = all_forecasts[all_forecasts['Data'].isin(datas_selecionadas)]
-
     # === MÉTRICAS ===
-    total_produtos  = len(df_export['Produto'].unique())
-    total_previsoes = len(df_export)
-    meses_previstos = len(df_export['Data'].unique())
-
     col1, col2, col3 = st.columns(3)
-    col1.metric("🎯 PRODUTOS",           total_produtos)
-    col2.metric("📅 MESES SELECIONADOS", meses_previstos)
-    col3.metric("📊 TOTAL PREVISÕES",    total_previsoes)
+    col1.metric("🎯 PRODUTOS",        len(df_export['Produto'].unique()))
+    col2.metric("📅 MESES",           len(df_export['Data'].unique()))
+    col3.metric("📊 TOTAL PREVISÕES", len(df_export))
 
     # === NOME DO ARQUIVO ===
     if grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
-        filename_suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
+        suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
     elif cliente_atual != "TODOS" and produto_atual == "TODOS":
-        filename_suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
+        suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
     elif cliente_atual == "TODOS" and produto_atual != "TODOS":
-        filename_suffix = f"produto_{produto_atual.replace(' ', '_')}"
+        suffix = f"produto_{produto_atual.replace(' ', '_')}"
     elif cliente_atual != "TODOS" and produto_atual != "TODOS":
-        filename_suffix = f"{cliente_atual.replace(' ', '_')}_{produto_atual.replace(' ', '_')}"
+        suffix = f"{cliente_atual.replace(' ', '_')}_{produto_atual.replace(' ', '_')}"
     else:
-        filename_suffix = "todos"
+        suffix = "todos"
+
+    periodo  = f"{data_inicio.replace('/', '-')}_a_{data_fim.replace('/', '-')}"
+    filename = f"previsoes_{suffix}_{periodo}.xlsx"
 
     # === DOWNLOAD ===
     df_ordenado = (
         df_export[['Produto', 'Data', 'Quantidade_Prevista']]
         .sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False])
     )
-    excel_bytes   = to_excel_single(df_ordenado)
-    filename_xlsx = f"previsoes_{filename_suffix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
     st.download_button(
-        label="📥 BAIXAR PREVISÕES SELECIONADAS",
-        data=excel_bytes,
-        file_name=filename_xlsx,
+        label="📥 BAIXAR PREVISÕES",
+        data=to_excel_single(df_ordenado),
+        file_name=filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary",
-        help="Exporta apenas os meses selecionados no filtro acima"
+        type="primary"
     )
 
     # === PREVIEW ===
-    with st.expander("👀 PREVIEW DOS DADOS PARA EXPORTAÇÃO"):
+    with st.expander("👀 PREVIEW DOS DADOS"):
         st.dataframe(df_ordenado, use_container_width=True)
 
 
+# ============================================================
+# DASHBOARD PRINCIPAL
+# ============================================================
 def show_dashboard():
-    """Exibe o dashboard principal após autenticação"""
     st.set_page_config(page_title="PAINEL DE VENDAS", layout="wide")
-    
+
     col1, col2 = st.columns([4, 1])
     with col1:
         st.title("📊 PAINEL DE VENDAS E PREVISÃO")
@@ -509,50 +437,55 @@ def show_dashboard():
     @st.cache_data
     def get_data():
         return load_data()
-    
+
     df = get_data()
 
     if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
         st.stop()
 
-    # === SEÇÃO PRINCIPAL DE GRÁFICOS ===
+    # === FILTROS DE ANÁLISE ===
     st.markdown("## 📈 ANÁLISE GRÁFICA")
-    
-    if 'grupo_selecionado' not in st.session_state:
-        st.session_state.grupo_selecionado = "TODOS"
-    if 'cliente_selecionado' not in st.session_state:
-        st.session_state.cliente_selecionado = "TODOS"
-    if 'produto_selecionado' not in st.session_state:
-        st.session_state.produto_selecionado = "TODOS"
-    
-    grupo = st.selectbox("SELECIONE A LINHA", ["TODOS"] + sorted(df['Grupo'].unique()), 
-                        index=0 if st.session_state.grupo_selecionado == "TODOS" else 
-                        (["TODOS"] + sorted(df['Grupo'].unique())).index(st.session_state.grupo_selecionado) 
-                        if st.session_state.grupo_selecionado in df['Grupo'].unique() else 0,
-                        key="grupo_select")
+
+    if 'grupo_selecionado'   not in st.session_state: st.session_state.grupo_selecionado   = "TODOS"
+    if 'cliente_selecionado' not in st.session_state: st.session_state.cliente_selecionado = "TODOS"
+    if 'produto_selecionado' not in st.session_state: st.session_state.produto_selecionado = "TODOS"
+
+    grupo = st.selectbox(
+        "SELECIONE A LINHA",
+        ["TODOS"] + sorted(df['Grupo'].unique()),
+        index=0 if st.session_state.grupo_selecionado == "TODOS"
+        else (["TODOS"] + sorted(df['Grupo'].unique())).index(st.session_state.grupo_selecionado)
+        if st.session_state.grupo_selecionado in df['Grupo'].unique() else 0,
+        key="grupo_select"
+    )
     st.session_state.grupo_selecionado = grupo
-    
+
     dfg = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
 
     clientes_disponiveis = ["TODOS"] + sorted(dfg['Cliente'].unique())
     if st.session_state.cliente_selecionado not in clientes_disponiveis:
         st.session_state.cliente_selecionado = "TODOS"
-    
-    cliente = st.selectbox("SELECIONE O CLIENTE", clientes_disponiveis,
-                          index=clientes_disponiveis.index(st.session_state.cliente_selecionado),
-                          key="cliente_select")
+
+    cliente = st.selectbox(
+        "SELECIONE O CLIENTE", clientes_disponiveis,
+        index=clientes_disponiveis.index(st.session_state.cliente_selecionado),
+        key="cliente_select"
+    )
     st.session_state.cliente_selecionado = cliente
-    
+
     dfc = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
 
     produtos_disponiveis = ["TODOS"] + sorted(dfc['Produto'].unique())
     if st.session_state.produto_selecionado not in produtos_disponiveis:
         st.session_state.produto_selecionado = "TODOS"
 
-    produto = st.selectbox("SELECIONE O PRODUTO", produtos_disponiveis,
-                          index=produtos_disponiveis.index(st.session_state.produto_selecionado),
-                          key="produto_select")
+    produto = st.selectbox(
+        "SELECIONE O PRODUTO", produtos_disponiveis,
+        index=produtos_disponiveis.index(st.session_state.produto_selecionado),
+        key="produto_select"
+    )
     st.session_state.produto_selecionado = produto
+
     dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
 
     if dff.empty:
@@ -564,7 +497,7 @@ def show_dashboard():
     serie = grouped.set_index('AnoMes')['Quantidade'].sort_index()
 
     try:
-        fc = make_forecast_from_series(serie)
+        fc        = make_forecast_from_series(serie)
         resultado = pd.concat([grouped, fc], ignore_index=True)
     except Exception as e:
         st.error(f"❌ Erro na previsão: {e}")
@@ -582,14 +515,12 @@ def show_dashboard():
         titulo = "PREVISÃO TOTAL"
 
     st.markdown(f"### 📌 {titulo}")
-
     fig = create_plot(resultado, titulo)
     st.plotly_chart(fig, use_container_width=True)
 
     # === GRÁFICO DE BARRAS ===
     st.markdown("---")
     st.markdown("## 📊 ANÁLISE DE VENDAS POR RANKING")
-    
     bar_fig = create_bar_chart(df, grupo, cliente, produto)
     if bar_fig:
         st.plotly_chart(bar_fig, use_container_width=True)
@@ -598,35 +529,37 @@ def show_dashboard():
 
     st.divider()
 
+    # === ESTATÍSTICAS ===
     with st.expander("📈 ESTATÍSTICAS DETALHADAS", expanded=True):
         historico = resultado[resultado['Previsao'] == 'HISTÓRICO']['Quantidade']
         previsao  = resultado[resultado['Previsao'] == 'PREVISÃO']['Quantidade']
 
         st.subheader("📊 HISTÓRICO")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total",         f"{historico.sum():,.0f}")
-        col2.metric("Média",         f"{historico.mean():.2f}")
-        col3.metric("Mediana",       f"{historico.median():.0f}")
-        col4.metric("Desvio Padrão", f"{historico.std():.2f}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total",         f"{historico.sum():,.0f}")
+        c2.metric("Média",         f"{historico.mean():.2f}")
+        c3.metric("Mediana",       f"{historico.median():.0f}")
+        c4.metric("Desvio Padrão", f"{historico.std():.2f}")
 
         st.markdown("")
 
         st.subheader("📈 PREVISÃO")
-        col5, col6, col7, col8 = st.columns(4)
-        col5.metric("Total Previsto",   f"{previsao.sum():,.0f}")
-        col6.metric("Média Prevista",   f"{previsao.mean():.2f}")
-        col7.metric("Mediana Prevista", f"{previsao.median():.0f}")
-        col8.metric("Desvio Padrão",    f"{previsao.std():.2f}")
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric("Total Previsto",   f"{previsao.sum():,.0f}")
+        c6.metric("Média Prevista",   f"{previsao.mean():.2f}")
+        c7.metric("Mediana Prevista", f"{previsao.median():.0f}")
+        c8.metric("Desvio Padrão",    f"{previsao.std():.2f}")
 
-        st.markdown("")
         st.caption("⚠️ Valores previstos foram suavizados com um fator de redução para representar cenários mais conservadores.")
 
-    # === SEÇÃO DE EXPORTAÇÃO ===
+    # === EXPORTAÇÃO ===
     show_export_section(df, grupo, cliente, produto)
 
 
+# ============================================================
+# MAIN
+# ============================================================
 def main():
-    """Função principal que controla o fluxo da aplicação"""
     if not check_authentication():
         return
     show_dashboard()
