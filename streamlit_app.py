@@ -277,9 +277,10 @@ def show_acuracia_panel(serie, titulo):
     fig.update_layout(
         title=f"REAL vs PREVISTO — PERÍODO DE VALIDAÇÃO | {titulo.upper()}",
         title_x=0.5, hovermode='x unified',
-        xaxis=dict(title='<b>MÊS</b>'),
-        yaxis=dict(title='<b>QUANTIDADE</b>'),
-        legend=dict(orientation='h', y=-0.2)
+        xaxis=dict(title='<b>MÊS</b>',       title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+        yaxis=dict(title='<b>QUANTIDADE</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+        hoverlabel=dict(bgcolor='#1e293b', bordercolor='#334155', font=dict(color='#f8fafc', size=13)),
+        legend=dict(orientation='h', y=-0.2, font=dict(color='#111827'))
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -316,8 +317,10 @@ def create_plot(df, title):
         )
         fig.update_layout(
             title_x=0.5, hovermode='x unified',
-            xaxis=dict(title='<b>MÊS</b>'),
-            yaxis=dict(title='<b>QUANTIDADE</b>')
+            xaxis=dict(title='<b>MÊS</b>',        title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+            yaxis=dict(title='<b>QUANTIDADE</b>',  title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+            hoverlabel=dict(bgcolor='#1e293b', bordercolor='#334155', font=dict(color='#f8fafc', size=13)),
+            legend=dict(font=dict(color='#111827'))
         )
         return fig
     except Exception as e:
@@ -364,8 +367,9 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
         )
         fig.update_layout(
             title_x=0.5, height=max(400, len(grouped) * 25),
-            xaxis=dict(title='<b>QUANTIDADE VENDIDA</b>'),
-            yaxis=dict(title=f'<b>{x_label}</b>'),
+            xaxis=dict(title='<b>QUANTIDADE VENDIDA</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+            yaxis=dict(title=f'<b>{x_label}</b>',         title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+            hoverlabel=dict(bgcolor='#1e293b', bordercolor='#334155', font=dict(color='#f8fafc', size=13)),
             showlegend=False
         )
         fig.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
