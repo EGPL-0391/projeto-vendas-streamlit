@@ -12,6 +12,16 @@ from io import BytesIO
 hide_streamlit_style = """
 <style>
 footer {visibility: hidden;}
+
+/* Métricas — fundo levemente destacado e borda lateral colorida */
+[data-testid="metric-container"] {
+    background-color: #f0f4f8;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    border-left: 4px solid #2563eb;
+}
+[data-testid="stMetricLabel"] > div  { color: #374151; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+[data-testid="stMetricValue"] > div  { color: #111827; font-size: 1.5rem; font-weight: 700; }
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -256,12 +266,12 @@ def show_acuracia_panel(serie, titulo):
     fig.add_trace(go.Scatter(
         x=df_comp['Data'], y=df_comp['Real'],
         name='Real', mode='lines+markers',
-        line=dict(color='black', width=2), marker=dict(size=7)
+        line=dict(color='#1d4ed8', width=2), marker=dict(size=7)
     ))
     fig.add_trace(go.Scatter(
         x=df_comp['Data'], y=df_comp['Previsto'],
         name='Previsto', mode='lines+markers',
-        line=dict(color='red', width=2, dash='dash'),
+        line=dict(color='#ea580c', width=2, dash='dash'),
         marker=dict(size=7, symbol='x')
     ))
     fig.update_layout(
@@ -300,8 +310,9 @@ def create_plot(df, title):
             labels={'AnoMes': 'MÊS', 'Quantidade': 'QUANTIDADE', 'Previsao': 'TIPO'}
         )
         fig.for_each_trace(
-            lambda t: t.update(line=dict(color='black')) if t.name == 'HISTÓRICO'
-                      else t.update(line=dict(color='red', dash='dash'))
+            lambda t: t.update(line=dict(color='#1d4ed8', width=2.5))
+            if t.name == 'HISTÓRICO'
+            else t.update(line=dict(color='#ea580c', width=2.5, dash='dash'))
         )
         fig.update_layout(
             title_x=0.5, hovermode='x unified',
