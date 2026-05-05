@@ -30,6 +30,16 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 FORECAST_MONTHS  = 6
 MIN_POINTS_MODEL = 12
 MIN_DATE         = '2024-01-01'
+
+# -----------------------------------------------------------------------
+# ACURÁCIA — meses fixos de teste
+# Motivo: usar n // 3 penalizava o modelo ao treinar com apenas ~67% dos
+# dados, produzindo um "previsto" muito diferente do que é exportado.
+# Com N_TEST_FIXED = 3, o treino usa todo o histórico exceto os 3 meses
+# mais recentes — o que representa melhor o modelo real em produção.
+# -----------------------------------------------------------------------
+N_TEST_FIXED = 3
+
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
 # === Credenciais ===
@@ -177,18 +187,35 @@ def make_forecast_from_series(serie):
     return result
 
 def calcular_acuracia(serie):
+    """
+    Calcula acurácia do modelo usando sempre N_TEST_FIXED meses de teste
+    (os últimos 3 meses do histórico).
+
+    Motivo da mudança em relação à versão anterior:
+    - Antes: n_test = max(3, n // 3) → com 15 meses de dados, por exemplo,
+      o treino usava apenas 10 meses (~67%), gerando um modelo muito mais
+      fraco do que o exportado em produção.
+    - Agora: n_test = 3 fixo → o treino usa todo o histórico menos os
+      3 meses mais recentes, o que aproxima muito mais o modelo de validação
+      do modelo real utilizado nas exportações mensais.
+    """
     n = len(serie)
-    if n < MIN_POINTS_MODEL:
+
+    # Mínimo: precisamos de dados suficientes para treino + 3 meses de teste
+    if n < MIN_POINTS_MODEL + N_TEST_FIXED:
         return None
 
-    n_test  = max(3, n // 3)
+    n_test  = N_TEST_FIXED
     n_train = n - n_test
-    if n_train < 6:
+
+    if n_train < MIN_POINTS_MODEL:
         return None
 
     serie_train = serie.iloc[:n_train]
     serie_test  = serie.iloc[n_train:]
-    seasonal, sp = ('add', 12) if n_train >= 24 else (None, None)
+
+    seasonal = 'add' if n_train >= 24 else None
+    sp       = 12    if n_train >= 24 else None
 
     try:
         model = ExponentialSmoothing(
@@ -242,7 +269,11 @@ def show_acuracia_panel(serie, titulo):
 
     acc = calcular_acuracia(serie)
     if acc is None:
-        st.warning(f"⚠️ Dados insuficientes para calcular acurácia (mínimo {MIN_POINTS_MODEL} meses).")
+        st.warning(
+            f"⚠️ Dados insuficientes para calcular acurácia "
+            f"(mínimo {MIN_POINTS_MODEL + N_TEST_FIXED} meses: "
+            f"{MIN_POINTS_MODEL} de treino + {N_TEST_FIXED} de teste)."
+        )
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -253,12 +284,13 @@ def show_acuracia_panel(serie, titulo):
 
     st.caption(
         f"📐 Metodologia: treino nos primeiros **{acc['n_train']} meses**, "
-        f"validação nos últimos **{acc['n_test']} meses** (walk-forward)."
+        f"validação nos últimos **{acc['n_test']} meses** (fixo). "
+        f"O modelo de validação usa praticamente os mesmos dados do modelo exportado."
     )
 
     df_comp = pd.DataFrame({
-        'Data':    acc['datas_teste'],
-        'Real':    acc['real'],
+        'Data':     acc['datas_teste'],
+        'Real':     acc['real'],
         'Previsto': acc['prev'].round().astype(int)
     })
 
@@ -275,7 +307,7 @@ def show_acuracia_panel(serie, titulo):
         marker=dict(size=7, symbol='x')
     ))
     fig.update_layout(
-        title=f"REAL vs PREVISTO — PERÍODO DE VALIDAÇÃO | {titulo.upper()}",
+        title=f"REAL vs PREVISTO — ÚLTIMOS {N_TEST_FIXED} MESES | {titulo.upper()}",
         title_x=0.5, hovermode='x unified',
         xaxis=dict(title='<b>MÊS</b>',       title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
         yaxis=dict(title='<b>QUANTIDADE</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
