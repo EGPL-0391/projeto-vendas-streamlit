@@ -216,10 +216,13 @@ def calcular_acuracia(serie):
 
     seasonal = 'add' if n_train >= 24 else None
     sp       = 12    if n_train >= 24 else None
+    # Damping só faz sentido com histórico longo — em séries curtas
+    # o otimizador colapsa φ → 0, produzindo previsão completamente flat.
+    damped   = n_train >= 24
 
     try:
         model = ExponentialSmoothing(
-            serie_train, trend='add', damped_trend=True,
+            serie_train, trend='add', damped_trend=damped,
             seasonal=seasonal, seasonal_periods=sp,
             initialization_method='estimated'
         ).fit(optimized=True)
@@ -227,7 +230,7 @@ def calcular_acuracia(serie):
     except Exception:
         try:
             model = ExponentialSmoothing(
-                serie_train, trend='add', damped_trend=True,
+                serie_train, trend='add', damped_trend=damped,
                 seasonal=None, initialization_method='estimated'
             ).fit(optimized=True)
             pred = model.forecast(n_test).clip(lower=0)
