@@ -309,7 +309,10 @@ def show_acuracia_panel(serie, titulo):
     fig.update_layout(
         title=f"REAL vs PREVISTO — ÚLTIMOS {N_TEST_FIXED} MESES | {titulo.upper()}",
         title_x=0.5, hovermode='x unified',
-        xaxis=dict(title='<b>MÊS</b>',       title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
+        xaxis=dict(
+            title='<b>MÊS</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827'),
+            dtick='M1', tickformat='%m/%Y'
+        ),
         yaxis=dict(title='<b>QUANTIDADE</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
         hoverlabel=dict(bgcolor='#1e293b', bordercolor='#334155', font=dict(color='#f8fafc', size=13)),
         legend=dict(orientation='h', y=-0.2, font=dict(color='#111827'))
