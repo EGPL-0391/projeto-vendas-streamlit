@@ -214,28 +214,34 @@ def calcular_acuracia(serie):
     serie_train = serie.iloc[:n_train]
     serie_test  = serie.iloc[n_train:]
 
-    seasonal = 'add' if n_train >= 24 else None
-    sp       = 12    if n_train >= 24 else None
-    # Damping só faz sentido com histórico longo — em séries curtas
-    # o otimizador colapsa φ → 0, produzindo previsão completamente flat.
-    damped   = n_train >= 24
-
-    try:
-        model = ExponentialSmoothing(
-            serie_train, trend='add', damped_trend=damped,
-            seasonal=seasonal, seasonal_periods=sp,
-            initialization_method='estimated'
-        ).fit(optimized=True)
-        pred = model.forecast(n_test).clip(lower=0)
-    except Exception:
+    # Walk-forward 1-step-ahead: para cada mês de teste, retreina o modelo
+    # com todos os dados disponíveis até aquele ponto e projeta apenas 1 mês.
+    # Isso evita previsões flat (comum quando se projeta 6 meses de uma vez
+    # com série curta) e representa melhor o processo real de produção.
+    preds = []
+    for i in range(n_test):
+        train_i  = serie.iloc[:n_train + i]
+        n_i      = len(train_i)
+        seasonal = 'add' if n_i >= 24 else None
+        sp       = 12    if n_i >= 24 else None
+        damped   = n_i   >= 24
         try:
-            model = ExponentialSmoothing(
-                serie_train, trend='add', damped_trend=damped,
-                seasonal=None, initialization_method='estimated'
+            m = ExponentialSmoothing(
+                train_i, trend='add', damped_trend=damped,
+                seasonal=seasonal, seasonal_periods=sp,
+                initialization_method='estimated'
             ).fit(optimized=True)
-            pred = model.forecast(n_test).clip(lower=0)
         except Exception:
-            return None
+            try:
+                m = ExponentialSmoothing(
+                    train_i, trend='add', damped_trend=False,
+                    seasonal=None, initialization_method='estimated'
+                ).fit(optimized=True)
+            except Exception:
+                return None
+        preds.append(max(0, m.forecast(1).iloc[0]))
+
+    pred = pd.Series(preds, index=serie_test.index)
 
     real = serie_test.values
     prev = pred.values
@@ -287,8 +293,8 @@ def show_acuracia_panel(serie, titulo):
 
     st.caption(
         f"📐 Metodologia: treino nos primeiros **{acc['n_train']} meses**, "
-        f"validação nos últimos **{acc['n_test']} meses** (fixo). "
-        f"O modelo de validação usa praticamente os mesmos dados do modelo exportado."
+        f"validação walk-forward nos últimos **{acc['n_test']} meses** (1 passo por vez). "
+        f"Cada ponto previsto retreina o modelo com todos os dados disponíveis até aquele mês."
     )
 
     df_comp = pd.DataFrame({
