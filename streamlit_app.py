@@ -35,10 +35,10 @@ MIN_DATE         = '2024-01-01'
 # ACURÁCIA — meses fixos de teste
 # Motivo: usar n // 3 penalizava o modelo ao treinar com apenas ~67% dos
 # dados, produzindo um "previsto" muito diferente do que é exportado.
-# Com N_TEST_FIXED = 3, o treino usa todo o histórico exceto os 3 meses
-# mais recentes — o que representa melhor o modelo real em produção.
+# Com N_TEST_FIXED = 6, o treino usa todo o histórico exceto os 6 meses
+# mais recentes — MAPE mais estável (6 pontos vs 3) e horizonte de validação equivalente ao que os usuários acompanham mensalmente. Mínimo de dados: MIN_POINTS_MODEL (12) + N_TEST_FIXED (6) = 18 meses.
 # -----------------------------------------------------------------------
-N_TEST_FIXED = 3
+N_TEST_FIXED = 6
 
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
