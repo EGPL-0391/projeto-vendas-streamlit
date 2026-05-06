@@ -182,52 +182,80 @@ def make_forecast_from_series(serie):
 
 def show_auditoria_panel(df, grupo_atual, produto_atual):
     """
-    Auditoria totalmente automática:
-    - Usuário escolhe o mês a auditar
-    - Sistema filtra a base até o mês anterior (simulando o que o modelo sabia naquele momento)
-    - Roda o modelo sobre esses dados e extrai a previsão para o mês escolhido
-    - Compara com o realizado que já está na base
-    Zero exportação, zero importação, zero armazenamento.
+    Auditoria automática: reproduz exatamente o modelo que rodou na extração.
+    O usuário informa o mês auditado E o mês de referência (último mês na base
+    quando a extração foi feita). Isso garante que o modelo usa os mesmos dados
+    que usou na época, produzindo previsões idênticas às exportadas.
     """
     st.markdown("---")
     st.markdown("## 🎯 AUDITORIA DE PREVISÕES")
 
-    # Meses com realizado disponível na base
-    meses_disponiveis = sorted(df["AnoMes"].unique())
+    st.info(
+        "🔎 A auditoria roda sempre com **todos os clientes consolidados**, "
+        "independente do filtro de cliente ativo — pois é assim que as previsões são geradas.",
+        icon=None
+    )
 
-    # Precisamos de pelo menos MIN_POINTS_MODEL meses ANTES do mês auditado
+    meses_disponiveis = sorted(df["AnoMes"].unique())
+    opcoes_fmt = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_disponiveis]
+
+    # Meses auditáveis: precisam ter realizado na base E ter ao menos MIN_POINTS_MODEL meses antes
     meses_auditaveis = [
         m for m in meses_disponiveis
         if len([x for x in meses_disponiveis if x < m]) >= MIN_POINTS_MODEL
     ]
-
     if not meses_auditaveis:
-        st.info(f"⚠️ Histórico insuficiente para auditoria. Necessário ao menos {MIN_POINTS_MODEL + 1} meses na base.")
+        st.info(f"⚠️ Histórico insuficiente. Necessário ao menos {MIN_POINTS_MODEL + 1} meses na base.")
         return
 
-    opcoes = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_auditaveis]
+    opcoes_auditaveis = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_auditaveis]
 
-    st.markdown("### 📅 Selecione o mês a auditar")
-    col_sel, _ = st.columns([1, 2])
-    with col_sel:
-        escolha = st.selectbox(
-            "Mês auditado", opcoes, index=len(opcoes) - 1,
-            help="O modelo será rodado com os dados disponíveis até o mês anterior a este",
+    st.markdown("### 📅 Parâmetros da auditoria")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        escolha_auditado = st.selectbox(
+            "📌 Mês auditado",
+            opcoes_auditaveis,
+            index=len(opcoes_auditaveis) - 1,
+            help="Mês cujo realizado você quer comparar com a previsão",
             key="auditoria_mes"
         )
 
-    mes_auditado = pd.to_datetime(escolha, format="%m/%Y")
-    mes_corte    = mes_auditado - pd.offsets.MonthBegin(1)  # último mês de treino
+    mes_auditado = pd.to_datetime(escolha_auditado, format="%m/%Y")
+
+    # Meses válidos como referência: anteriores ao mês auditado e com dados suficientes
+    meses_ref_validos = [m for m in meses_disponiveis if pd.Timestamp(m) < mes_auditado]
+    opcoes_ref = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_ref_validos]
+
+    # Default: 2 meses antes do auditado (padrão: extração feita no mês anterior
+    # quando o penúltimo mês era o último fechado)
+    default_ref = max(0, len(opcoes_ref) - 2)
+
+    with col2:
+        escolha_ref = st.selectbox(
+            "📂 Último mês disponível na extração",
+            opcoes_ref,
+            index=default_ref,
+            help="Qual era o último mês de dados quando você rodou a extração? "
+                 "Isso garante que o modelo reproduz exatamente o que foi exportado.",
+            key="auditoria_ref"
+        )
+
+    mes_ref = pd.to_datetime(escolha_ref, format="%m/%Y")
+
+    if mes_ref >= mes_auditado:
+        st.error("❌ O mês de referência deve ser anterior ao mês auditado.")
+        return
 
     st.caption(
-        f"📐 Simulação: modelo treinado com dados até **{mes_corte.strftime('%m/%Y')}** "
-        f"| previsão para **{escolha}** comparada com o realizado da base."
+        f"📐 Modelo treinado com dados até **{escolha_ref}** "
+        f"→ previsão para **{escolha_auditado}** vs realizado da base."
     )
 
-    # Filtra base até o mês de corte (exclusive o mês auditado)
-    df_treino = df[df["AnoMes"] < mes_auditado].copy()
+    # Filtra base até o mês de referência (inclusive)
+    df_treino = df[df["AnoMes"] <= mes_ref].copy()
 
-    # Aplica filtros de produto/grupo se selecionados
     if grupo_atual != "TODOS":
         df_treino = df_treino[df_treino["Grupo"] == grupo_atual]
     if produto_atual != "TODOS":
@@ -237,24 +265,28 @@ def show_auditoria_panel(df, grupo_atual, produto_atual):
         st.warning("⚠️ Nenhum dado de treino com os filtros aplicados.")
         return
 
-    # Gera previsões com dados até o corte
-    with st.spinner("🔄 Rodando modelo com dados históricos..."):
+    with st.spinner("🔄 Rodando modelo..."):
         df_fc = create_all_forecasts_table(df_treino)
 
     if df_fc.empty:
-        st.warning("⚠️ Não foi possível gerar previsões — dados insuficientes para os produtos filtrados.")
+        st.warning("⚠️ Não foi possível gerar previsões — dados insuficientes.")
         return
 
-    # Extrai apenas o mês auditado
     df_prev = df_fc[df_fc["AnoMes"] == mes_auditado][["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
 
     if df_prev.empty:
-        st.warning(f"⚠️ Nenhum produto gerou previsão para {escolha}.")
+        st.warning(f"⚠️ Nenhum produto gerou previsão para {escolha_auditado}.")
         return
 
-    # Realizado do mês auditado (todos os clientes consolidados)
+    # Realizado consolidado (todos os clientes) — sem filtro de cliente
+    df_real_base = df[df["AnoMes"] == mes_auditado]
+    if grupo_atual != "TODOS":
+        df_real_base = df_real_base[df_real_base["Grupo"] == grupo_atual]
+    if produto_atual != "TODOS":
+        df_real_base = df_real_base[df_real_base["Produto"] == produto_atual]
+
     df_real = (
-        df[df["AnoMes"] == mes_auditado]
+        df_real_base
         .groupby("Produto")["Quantidade"]
         .sum()
         .reset_index()
@@ -264,7 +296,7 @@ def show_auditoria_panel(df, grupo_atual, produto_atual):
     df_comp = df_prev.merge(df_real, on="Produto", how="inner")
 
     if df_comp.empty:
-        st.warning(f"⚠️ Nenhum produto com previsão e realizado em {escolha}.")
+        st.warning(f"⚠️ Nenhum produto com previsão e realizado em {escolha_auditado}.")
         return
 
     # ── Métricas globais ──────────────────────────────────────────────────────
@@ -283,29 +315,26 @@ def show_auditoria_panel(df, grupo_atual, produto_atual):
     else:
         classificacao = "🔴 BAIXA"
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("MAPE",      f"{mape:.1f}%",  help="Erro percentual médio real")
-    col2.metric("MAE",       f"{mae:.0f}",     help="Erro absoluto médio em unidades")
-    col3.metric("RMSE",      f"{rmse:.0f}",    help="Raiz do erro quadrático médio")
-    col4.metric("QUALIDADE", classificacao)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("MAPE",      f"{mape:.1f}%", help="Erro percentual médio real")
+    c2.metric("MAE",       f"{mae:.0f}",   help="Erro absoluto médio em unidades")
+    c3.metric("RMSE",      f"{rmse:.0f}",  help="Raiz do erro quadrático médio")
+    c4.metric("QUALIDADE", classificacao)
+    st.caption(f"📊 **{df_comp['Produto'].nunique()} produtos** auditados em {escolha_auditado}.")
 
-    st.caption(
-        f"📊 **{df_comp['Produto'].nunique()} produtos** auditados em {escolha}."
-    )
-
-    # ── Gráfico comparativo por produto (top 20 por realizado) ────────────────
+    # ── Gráfico: Previsto primeiro, Realizado depois ───────────────────────────
     df_plot = df_comp.sort_values("Realizado", ascending=False).head(20)
     fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Previsto", x=df_plot["Produto"], y=df_plot["Quantidade_Prevista"],
+        marker_color="#ea580c", opacity=0.85
+    ))
     fig.add_trace(go.Bar(
         name="Realizado", x=df_plot["Produto"], y=df_plot["Realizado"],
         marker_color="#1d4ed8"
     ))
-    fig.add_trace(go.Bar(
-        name="Previsto", x=df_plot["Produto"], y=df_plot["Quantidade_Prevista"],
-        marker_color="#ea580c", opacity=0.8
-    ))
     fig.update_layout(
-        title=f"REALIZADO vs PREVISTO — {escolha} | TOP 20 PRODUTOS",
+        title=f"PREVISTO vs REALIZADO — {escolha_auditado} | TOP 20 PRODUTOS",
         title_x=0.5, barmode="group", hovermode="x unified",
         xaxis=dict(title="<b>PRODUTO</b>", title_font=dict(color="#111827"),
                    tickfont=dict(color="#111827"), tickangle=-35),
@@ -316,7 +345,7 @@ def show_auditoria_panel(df, grupo_atual, produto_atual):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tabela por produto ────────────────────────────────────────────────────
+    # ── Tabela completa ───────────────────────────────────────────────────────
     with st.expander("📋 TABELA COMPLETA POR PRODUTO"):
         df_tab = df_comp.copy()
         df_tab["Erro Abs"] = (df_tab["Realizado"] - df_tab["Quantidade_Prevista"]).abs()
