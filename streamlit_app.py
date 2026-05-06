@@ -138,38 +138,6 @@ def load_data():
     return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
 
 
-HISTORICO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'historico_previsoes.csv')
-
-def salvar_snapshot(df):
-    """
-    Gera previsões consolidadas (todos os clientes) por Produto e
-    salva no histórico com a data de extração de hoje.
-    Previsões já existentes para a mesma data são substituídas.
-    """
-    df_fc = create_all_forecasts_table(df)
-    if df_fc.empty:
-        return False, "Nenhuma previsão gerada — dados insuficientes."
-
-    df_fc = df_fc[["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
-    df_fc["Data_Extracao"] = pd.Timestamp.today().normalize()
-
-    if os.path.exists(HISTORICO_PATH):
-        df_hist = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
-        # Remove entradas do mesmo dia para evitar duplicatas
-        hoje = pd.Timestamp.today().normalize()
-        df_hist = df_hist[df_hist["Data_Extracao"].dt.normalize() != hoje]
-        df_hist = pd.concat([df_hist, df_fc], ignore_index=True)
-    else:
-        df_hist = df_fc
-
-    df_hist.to_csv(HISTORICO_PATH, index=False)
-    return True, f"{len(df_fc)} previsões salvas para {len(df_fc['AnoMes'].unique())} meses."
-
-def carregar_historico():
-    if not os.path.exists(HISTORICO_PATH):
-        return pd.DataFrame()
-    df = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
-    return df
 
 def make_forecast_from_series(serie):
     serie = serie.sort_index()
@@ -212,123 +180,101 @@ def make_forecast_from_series(serie):
     result['Previsao'] = 'PREVISÃO'
     return result
 
-def importar_extracao_historica(data_extracao, uploaded_file):
+def show_auditoria_panel(df, grupo_atual, produto_atual):
     """
-    Importa um Excel de previsões exportado manualmente (extrações antigas)
-    para o histórico interno, associando à data de extração informada.
-    Formato esperado: Produto | Data (MM/AAAA) | Quantidade_Prevista
+    Auditoria totalmente automática:
+    - Usuário escolhe o mês a auditar
+    - Sistema filtra a base até o mês anterior (simulando o que o modelo sabia naquele momento)
+    - Roda o modelo sobre esses dados e extrai a previsão para o mês escolhido
+    - Compara com o realizado que já está na base
+    Zero exportação, zero importação, zero armazenamento.
     """
-    try:
-        df_imp = pd.read_excel(uploaded_file)
-    except Exception as e:
-        return False, f"Erro ao ler o arquivo: {e}"
-
-    required = ["Produto", "Data", "Quantidade_Prevista"]
-    missing  = [c for c in required if c not in df_imp.columns]
-    if missing:
-        return False, f"Colunas não encontradas: {missing}. Use o arquivo exportado pelo painel."
-
-    try:
-        df_imp["AnoMes"] = pd.to_datetime(df_imp["Data"], format="%m/%Y")
-    except Exception:
-        return False, "Formato da coluna 'Data' inválido. Esperado MM/AAAA."
-
-    df_imp = df_imp[["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
-    df_imp["Data_Extracao"] = pd.Timestamp(data_extracao).normalize()
-
-    if os.path.exists(HISTORICO_PATH):
-        df_hist = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
-        dt_ext  = pd.Timestamp(data_extracao).normalize()
-        df_hist = df_hist[df_hist["Data_Extracao"].dt.normalize() != dt_ext]
-        df_hist = pd.concat([df_hist, df_imp], ignore_index=True)
-    else:
-        df_hist = df_imp
-
-    df_hist.to_csv(HISTORICO_PATH, index=False)
-    return True, f"{len(df_imp)} previsões importadas para {len(df_imp['AnoMes'].unique())} meses (extração: {pd.Timestamp(data_extracao).strftime('%d/%m/%Y')})."
-
-def show_auditoria_panel(df, grupo_atual, cliente_atual, produto_atual):
     st.markdown("---")
     st.markdown("## 🎯 AUDITORIA DE PREVISÕES")
 
-    # ── Importar extrações históricas ────────────────────────────────────────
-    with st.expander("📥 IMPORTAR EXTRAÇÃO HISTÓRICA"):
-        st.markdown(
-            "Carregue um arquivo de previsões exportado em meses anteriores para "
-            "popular o histórico e auditar períodos já encerrados."
-        )
-        col_dt, col_up = st.columns([1, 2])
-        with col_dt:
-            data_imp = st.date_input("📅 Data da extração", key="imp_data",
-                                     help="Informe o mês/ano em que você exportou esse arquivo")
-        with col_up:
-            arq_imp = st.file_uploader("Arquivo de previsões (.xlsx)", type=["xlsx"], key="imp_arquivo")
+    # Meses com realizado disponível na base
+    meses_disponiveis = sorted(df["AnoMes"].unique())
 
-        if st.button("💾 IMPORTAR PARA O HISTÓRICO", key="btn_importar"):
-            if arq_imp is None:
-                st.warning("⚠️ Selecione um arquivo antes de importar.")
-            else:
-                ok, msg = importar_extracao_historica(data_imp, arq_imp)
-                if ok:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {msg}")
+    # Precisamos de pelo menos MIN_POINTS_MODEL meses ANTES do mês auditado
+    meses_auditaveis = [
+        m for m in meses_disponiveis
+        if len([x for x in meses_disponiveis if x < m]) >= MIN_POINTS_MODEL
+    ]
 
-    st.markdown("---")
-
-    df_hist = carregar_historico()
-
-    if df_hist.empty:
-        st.info("📭 Nenhum snapshot salvo ainda. Use o botão **💾 Salvar Snapshot** na seção de exportação ou importe uma extração histórica acima.")
+    if not meses_auditaveis:
+        st.info(f"⚠️ Histórico insuficiente para auditoria. Necessário ao menos {MIN_POINTS_MODEL + 1} meses na base.")
         return
 
-    # Lista de extrações disponíveis
-    datas = sorted(df_hist["Data_Extracao"].dt.normalize().unique(), reverse=True)
-    opcoes = [d.strftime("%d/%m/%Y") for d in datas]
+    opcoes = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_auditaveis]
 
-    st.markdown("### 📅 Selecione a extração a auditar")
-    escolha = st.selectbox("Data de extração", opcoes, key="auditoria_extracao")
-    dt_escolha = pd.Timestamp(pd.to_datetime(escolha, format="%d/%m/%Y"))
+    st.markdown("### 📅 Selecione o mês a auditar")
+    col_sel, _ = st.columns([1, 2])
+    with col_sel:
+        escolha = st.selectbox(
+            "Mês auditado", opcoes, index=len(opcoes) - 1,
+            help="O modelo será rodado com os dados disponíveis até o mês anterior a este",
+            key="auditoria_mes"
+        )
 
-    df_prev = df_hist[df_hist["Data_Extracao"].dt.normalize() == dt_escolha].copy()
+    mes_auditado = pd.to_datetime(escolha, format="%m/%Y")
+    mes_corte    = mes_auditado - pd.offsets.MonthBegin(1)  # último mês de treino
 
-    # Aplica filtro de produto se selecionado
+    st.caption(
+        f"📐 Simulação: modelo treinado com dados até **{mes_corte.strftime('%m/%Y')}** "
+        f"| previsão para **{escolha}** comparada com o realizado da base."
+    )
+
+    # Filtra base até o mês de corte (exclusive o mês auditado)
+    df_treino = df[df["AnoMes"] < mes_auditado].copy()
+
+    # Aplica filtros de produto/grupo se selecionados
+    if grupo_atual != "TODOS":
+        df_treino = df_treino[df_treino["Grupo"] == grupo_atual]
     if produto_atual != "TODOS":
-        df_prev = df_prev[df_prev["Produto"] == produto_atual]
+        df_treino = df_treino[df_treino["Produto"] == produto_atual]
+
+    if df_treino.empty:
+        st.warning("⚠️ Nenhum dado de treino com os filtros aplicados.")
+        return
+
+    # Gera previsões com dados até o corte
+    with st.spinner("🔄 Rodando modelo com dados históricos..."):
+        df_fc = create_all_forecasts_table(df_treino)
+
+    if df_fc.empty:
+        st.warning("⚠️ Não foi possível gerar previsões — dados insuficientes para os produtos filtrados.")
+        return
+
+    # Extrai apenas o mês auditado
+    df_prev = df_fc[df_fc["AnoMes"] == mes_auditado][["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
 
     if df_prev.empty:
-        st.warning("⚠️ Nenhuma previsão encontrada para os filtros aplicados nesta extração.")
+        st.warning(f"⚠️ Nenhum produto gerou previsão para {escolha}.")
         return
 
-    # Agrega realizado por Produto + Mês (todos os clientes)
+    # Realizado do mês auditado (todos os clientes consolidados)
     df_real = (
-        df.groupby(["Produto", "AnoMes"])["Quantidade"]
+        df[df["AnoMes"] == mes_auditado]
+        .groupby("Produto")["Quantidade"]
         .sum()
         .reset_index()
         .rename(columns={"Quantidade": "Realizado"})
     )
 
-    df_comp = df_prev[["Produto", "AnoMes", "Quantidade_Prevista"]].merge(
-        df_real, on=["Produto", "AnoMes"], how="inner"
-    )
+    df_comp = df_prev.merge(df_real, on="Produto", how="inner")
 
     if df_comp.empty:
-        meses_previstos = df_prev["AnoMes"].dt.strftime("%m/%Y").unique()
-        st.warning(
-            f"⚠️ Os meses previstos nesta extração ({', '.join(sorted(meses_previstos))}) "
-            f"ainda não têm realizado na base de vendas."
-        )
+        st.warning(f"⚠️ Nenhum produto com previsão e realizado em {escolha}.")
         return
 
     # ── Métricas globais ──────────────────────────────────────────────────────
-    mask = df_comp["Realizado"] > 0
-    mape = np.mean(np.abs(
+    mask  = df_comp["Realizado"] > 0
+    mape  = np.mean(np.abs(
         (df_comp.loc[mask, "Realizado"] - df_comp.loc[mask, "Quantidade_Prevista"])
         / df_comp.loc[mask, "Realizado"]
     )) * 100
-    mae  = np.mean(np.abs(df_comp["Realizado"] - df_comp["Quantidade_Prevista"]))
-    rmse = np.sqrt(np.mean((df_comp["Realizado"] - df_comp["Quantidade_Prevista"]) ** 2))
+    mae   = np.mean(np.abs(df_comp["Realizado"] - df_comp["Quantidade_Prevista"]))
+    rmse  = np.sqrt(np.mean((df_comp["Realizado"] - df_comp["Quantidade_Prevista"]) ** 2))
 
     if mape <= 15:
         classificacao = "🟢 ÓTIMA"
@@ -338,88 +284,53 @@ def show_auditoria_panel(df, grupo_atual, cliente_atual, produto_atual):
         classificacao = "🔴 BAIXA"
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("MAPE",      f"{mape:.1f}%",  help="Erro percentual médio real das previsões exportadas")
+    col1.metric("MAPE",      f"{mape:.1f}%",  help="Erro percentual médio real")
     col2.metric("MAE",       f"{mae:.0f}",     help="Erro absoluto médio em unidades")
     col3.metric("RMSE",      f"{rmse:.0f}",    help="Raiz do erro quadrático médio")
     col4.metric("QUALIDADE", classificacao)
 
-    meses_auditados   = df_comp["AnoMes"].nunique()
-    produtos_auditados = df_comp["Produto"].nunique()
     st.caption(
-        f"📐 Extração de **{escolha}** | "
-        f"**{produtos_auditados} produtos** auditados em "
-        f"**{meses_auditados} {'mês' if meses_auditados == 1 else 'meses'}** com realizado disponível."
+        f"📊 **{df_comp['Produto'].nunique()} produtos** auditados em {escolha}."
     )
 
-    # ── Gráfico consolidado por mês ───────────────────────────────────────────
-    df_mes = (
-        df_comp.groupby("AnoMes")[["Realizado", "Quantidade_Prevista"]]
-        .sum()
-        .reset_index()
-        .sort_values("AnoMes")
-    )
-
+    # ── Gráfico comparativo por produto (top 20 por realizado) ────────────────
+    df_plot = df_comp.sort_values("Realizado", ascending=False).head(20)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df_mes["AnoMes"], y=df_mes["Realizado"],
-        name="Realizado", mode="lines+markers",
-        line=dict(color="#1d4ed8", width=2), marker=dict(size=8)
+    fig.add_trace(go.Bar(
+        name="Realizado", x=df_plot["Produto"], y=df_plot["Realizado"],
+        marker_color="#1d4ed8"
     ))
-    fig.add_trace(go.Scatter(
-        x=df_mes["AnoMes"], y=df_mes["Quantidade_Prevista"],
-        name=f"Previsto (extração {escolha})", mode="lines+markers",
-        line=dict(color="#ea580c", width=2, dash="dash"),
-        marker=dict(size=8, symbol="x")
+    fig.add_trace(go.Bar(
+        name="Previsto", x=df_plot["Produto"], y=df_plot["Quantidade_Prevista"],
+        marker_color="#ea580c", opacity=0.8
     ))
     fig.update_layout(
-        title=f"REALIZADO vs PREVISTO — EXTRAÇÃO {escolha}",
-        title_x=0.5, hovermode="x unified",
-        xaxis=dict(
-            title="<b>MÊS</b>", title_font=dict(color="#111827"), tickfont=dict(color="#111827"),
-            dtick="M1", tickformat="%m/%Y"
-        ),
-        yaxis=dict(title="<b>QUANTIDADE</b>", title_font=dict(color="#111827"), tickfont=dict(color="#111827")),
+        title=f"REALIZADO vs PREVISTO — {escolha} | TOP 20 PRODUTOS",
+        title_x=0.5, barmode="group", hovermode="x unified",
+        xaxis=dict(title="<b>PRODUTO</b>", title_font=dict(color="#111827"),
+                   tickfont=dict(color="#111827"), tickangle=-35),
+        yaxis=dict(title="<b>QUANTIDADE</b>", title_font=dict(color="#111827"),
+                   tickfont=dict(color="#111827")),
         hoverlabel=dict(bgcolor="#1e293b", bordercolor="#334155", font=dict(color="#f8fafc", size=13)),
-        legend=dict(orientation="h", y=-0.2, font=dict(color="#111827"))
+        legend=dict(orientation="h", y=-0.3, font=dict(color="#111827"))
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── MAPE por produto ──────────────────────────────────────────────────────
-    with st.expander("📊 MAPE POR PRODUTO"):
-        def mape_produto(g):
-            m = g["Realizado"] > 0
-            if m.sum() == 0:
-                return pd.Series({"MAPE (%)": None, "MAE": None, "Meses": len(g)})
-            return pd.Series({
-                "MAPE (%)": round(np.mean(np.abs(
-                    (g.loc[m, "Realizado"] - g.loc[m, "Quantidade_Prevista"])
-                    / g.loc[m, "Realizado"]
-                )) * 100, 1),
-                "MAE":  round(np.mean(np.abs(g["Realizado"] - g["Quantidade_Prevista"])), 0),
-                "Meses": len(g)
-            })
-
-        df_por_produto = (
-            df_comp.groupby("Produto")
-            .apply(mape_produto)
-            .reset_index()
-            .sort_values("MAPE (%)", ascending=True)
-        )
-        st.dataframe(df_por_produto.set_index("Produto"), use_container_width=True)
-
-    # ── Tabela detalhada ──────────────────────────────────────────────────────
-    with st.expander("📋 TABELA DETALHADA"):
-        df_det = df_comp.copy()
-        df_det["Data"]      = df_det["AnoMes"].dt.strftime("%m/%Y")
-        df_det["Erro Abs"]  = (df_det["Realizado"] - df_det["Quantidade_Prevista"]).abs()
-        df_det["Erro (%)"]  = np.where(
-            df_det["Realizado"] > 0,
-            ((df_det["Realizado"] - df_det["Quantidade_Prevista"]).abs()
-             / df_det["Realizado"] * 100).round(1),
+    # ── Tabela por produto ────────────────────────────────────────────────────
+    with st.expander("📋 TABELA COMPLETA POR PRODUTO"):
+        df_tab = df_comp.copy()
+        df_tab["Erro Abs"] = (df_tab["Realizado"] - df_tab["Quantidade_Prevista"]).abs()
+        df_tab["Erro (%)"] = np.where(
+            df_tab["Realizado"] > 0,
+            ((df_tab["Realizado"] - df_tab["Quantidade_Prevista"]).abs()
+             / df_tab["Realizado"] * 100).round(1),
             np.nan
         )
-        df_det = df_det[["Produto", "Data", "Realizado", "Quantidade_Prevista", "Erro Abs", "Erro (%)"]].sort_values(["Data", "Produto"])
-        st.dataframe(df_det.set_index("Produto"), use_container_width=True)
+        df_tab = (
+            df_tab[["Produto", "Realizado", "Quantidade_Prevista", "Erro Abs", "Erro (%)"]]
+            .sort_values("Erro (%)", ascending=True)
+        )
+        st.dataframe(df_tab.set_index("Produto"), use_container_width=True)
 
 
 def create_plot(df, title):
@@ -595,20 +506,11 @@ def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
         df_export[['Produto', 'Data', 'Quantidade_Prevista']]
         .sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False])
     )
-    col_dl, col_snap = st.columns([3, 1])
-    with col_dl:
-        st.download_button(
-            label="📥 BAIXAR PREVISÕES", data=to_excel_single(df_ordenado),
-            file_name=filename, type="primary",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    with col_snap:
-        if st.button("💾 SALVAR SNAPSHOT", help="Registra as previsões atuais no histórico para auditoria futura"):
-            ok, msg = salvar_snapshot(df)
-            if ok:
-                st.success(f"✅ {msg}")
-            else:
-                st.error(f"❌ {msg}")
+    st.download_button(
+        label="📥 BAIXAR PREVISÕES", data=to_excel_single(df_ordenado),
+        file_name=filename, type="primary",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
     with st.expander("👀 PREVIEW DOS DADOS"):
         st.dataframe(df_ordenado, use_container_width=True)
 
@@ -733,7 +635,7 @@ def show_dashboard():
             c8.metric("Desvio Padrão",    f"{fc['Quantidade'].std():.2f}")
             st.caption("ℹ️ Sazonalidade ativada automaticamente com 24+ meses de dados.")
 
-    show_auditoria_panel(df, grupo, cliente, produto)
+    show_auditoria_panel(df, grupo, produto)
     show_export_section(df, grupo, cliente, produto)
 
 def main():
