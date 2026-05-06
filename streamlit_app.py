@@ -212,14 +212,75 @@ def make_forecast_from_series(serie):
     result['Previsao'] = 'PREVISÃO'
     return result
 
+def importar_extracao_historica(data_extracao, uploaded_file):
+    """
+    Importa um Excel de previsões exportado manualmente (extrações antigas)
+    para o histórico interno, associando à data de extração informada.
+    Formato esperado: Produto | Data (MM/AAAA) | Quantidade_Prevista
+    """
+    try:
+        df_imp = pd.read_excel(uploaded_file)
+    except Exception as e:
+        return False, f"Erro ao ler o arquivo: {e}"
+
+    required = ["Produto", "Data", "Quantidade_Prevista"]
+    missing  = [c for c in required if c not in df_imp.columns]
+    if missing:
+        return False, f"Colunas não encontradas: {missing}. Use o arquivo exportado pelo painel."
+
+    try:
+        df_imp["AnoMes"] = pd.to_datetime(df_imp["Data"], format="%m/%Y")
+    except Exception:
+        return False, "Formato da coluna 'Data' inválido. Esperado MM/AAAA."
+
+    df_imp = df_imp[["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
+    df_imp["Data_Extracao"] = pd.Timestamp(data_extracao).normalize()
+
+    if os.path.exists(HISTORICO_PATH):
+        df_hist = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
+        dt_ext  = pd.Timestamp(data_extracao).normalize()
+        df_hist = df_hist[df_hist["Data_Extracao"].dt.normalize() != dt_ext]
+        df_hist = pd.concat([df_hist, df_imp], ignore_index=True)
+    else:
+        df_hist = df_imp
+
+    df_hist.to_csv(HISTORICO_PATH, index=False)
+    return True, f"{len(df_imp)} previsões importadas para {len(df_imp['AnoMes'].unique())} meses (extração: {pd.Timestamp(data_extracao).strftime('%d/%m/%Y')})."
+
 def show_auditoria_panel(df, grupo_atual, cliente_atual, produto_atual):
     st.markdown("---")
     st.markdown("## 🎯 AUDITORIA DE PREVISÕES")
 
+    # ── Importar extrações históricas ────────────────────────────────────────
+    with st.expander("📥 IMPORTAR EXTRAÇÃO HISTÓRICA"):
+        st.markdown(
+            "Carregue um arquivo de previsões exportado em meses anteriores para "
+            "popular o histórico e auditar períodos já encerrados."
+        )
+        col_dt, col_up = st.columns([1, 2])
+        with col_dt:
+            data_imp = st.date_input("📅 Data da extração", key="imp_data",
+                                     help="Informe o mês/ano em que você exportou esse arquivo")
+        with col_up:
+            arq_imp = st.file_uploader("Arquivo de previsões (.xlsx)", type=["xlsx"], key="imp_arquivo")
+
+        if st.button("💾 IMPORTAR PARA O HISTÓRICO", key="btn_importar"):
+            if arq_imp is None:
+                st.warning("⚠️ Selecione um arquivo antes de importar.")
+            else:
+                ok, msg = importar_extracao_historica(data_imp, arq_imp)
+                if ok:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg}")
+
+    st.markdown("---")
+
     df_hist = carregar_historico()
 
     if df_hist.empty:
-        st.info("📭 Nenhum snapshot salvo ainda. Use o botão **💾 Salvar Snapshot** na seção de exportação para registrar as previsões de hoje.")
+        st.info("📭 Nenhum snapshot salvo ainda. Use o botão **💾 Salvar Snapshot** na seção de exportação ou importe uma extração histórica acima.")
         return
 
     # Lista de extrações disponíveis
@@ -534,11 +595,20 @@ def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
         df_export[['Produto', 'Data', 'Quantidade_Prevista']]
         .sort_values(['Data', 'Quantidade_Prevista'], ascending=[True, False])
     )
-    st.download_button(
-        label="📥 BAIXAR PREVISÕES", data=to_excel_single(df_ordenado),
-        file_name=filename, type="primary",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    col_dl, col_snap = st.columns([3, 1])
+    with col_dl:
+        st.download_button(
+            label="📥 BAIXAR PREVISÕES", data=to_excel_single(df_ordenado),
+            file_name=filename, type="primary",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    with col_snap:
+        if st.button("💾 SALVAR SNAPSHOT", help="Registra as previsões atuais no histórico para auditoria futura"):
+            ok, msg = salvar_snapshot(df)
+            if ok:
+                st.success(f"✅ {msg}")
+            else:
+                st.error(f"❌ {msg}")
     with st.expander("👀 PREVIEW DOS DADOS"):
         st.dataframe(df_ordenado, use_container_width=True)
 
