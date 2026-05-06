@@ -31,14 +31,6 @@ FORECAST_MONTHS  = 6
 MIN_POINTS_MODEL = 12
 MIN_DATE         = '2024-01-01'
 
-# -----------------------------------------------------------------------
-# ACURÁCIA — meses fixos de teste
-# Motivo: usar n // 3 penalizava o modelo ao treinar com apenas ~67% dos
-# dados, produzindo um "previsto" muito diferente do que é exportado.
-# Com N_TEST_FIXED = 6, o treino usa todo o histórico exceto os 6 meses
-# mais recentes — MAPE mais estável (6 pontos vs 3) e horizonte de validação equivalente ao que os usuários acompanham mensalmente. Mínimo de dados: MIN_POINTS_MODEL (12) + N_TEST_FIXED (6) = 18 meses.
-# -----------------------------------------------------------------------
-N_TEST_FIXED = 6
 
 logging.getLogger('streamlit.runtime.scriptrunner').setLevel(logging.ERROR)
 
@@ -145,6 +137,40 @@ def load_data():
 
     return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
 
+
+HISTORICO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'historico_previsoes.csv')
+
+def salvar_snapshot(df):
+    """
+    Gera previsões consolidadas (todos os clientes) por Produto e
+    salva no histórico com a data de extração de hoje.
+    Previsões já existentes para a mesma data são substituídas.
+    """
+    df_fc = create_all_forecasts_table(df)
+    if df_fc.empty:
+        return False, "Nenhuma previsão gerada — dados insuficientes."
+
+    df_fc = df_fc[["Produto", "AnoMes", "Quantidade_Prevista"]].copy()
+    df_fc["Data_Extracao"] = pd.Timestamp.today().normalize()
+
+    if os.path.exists(HISTORICO_PATH):
+        df_hist = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
+        # Remove entradas do mesmo dia para evitar duplicatas
+        hoje = pd.Timestamp.today().normalize()
+        df_hist = df_hist[df_hist["Data_Extracao"].dt.normalize() != hoje]
+        df_hist = pd.concat([df_hist, df_fc], ignore_index=True)
+    else:
+        df_hist = df_fc
+
+    df_hist.to_csv(HISTORICO_PATH, index=False)
+    return True, f"{len(df_fc)} previsões salvas para {len(df_fc['AnoMes'].unique())} meses."
+
+def carregar_historico():
+    if not os.path.exists(HISTORICO_PATH):
+        return pd.DataFrame()
+    df = pd.read_csv(HISTORICO_PATH, parse_dates=["AnoMes", "Data_Extracao"])
+    return df
+
 def make_forecast_from_series(serie):
     serie = serie.sort_index()
     n     = len(serie)
@@ -186,72 +212,62 @@ def make_forecast_from_series(serie):
     result['Previsao'] = 'PREVISÃO'
     return result
 
-def calcular_acuracia(serie):
-    """
-    Calcula acurácia do modelo usando sempre N_TEST_FIXED meses de teste
-    (os últimos 3 meses do histórico).
+def show_auditoria_panel(df, grupo_atual, cliente_atual, produto_atual):
+    st.markdown("---")
+    st.markdown("## 🎯 AUDITORIA DE PREVISÕES")
 
-    Motivo da mudança em relação à versão anterior:
-    - Antes: n_test = max(3, n // 3) → com 15 meses de dados, por exemplo,
-      o treino usava apenas 10 meses (~67%), gerando um modelo muito mais
-      fraco do que o exportado em produção.
-    - Agora: n_test = 3 fixo → o treino usa todo o histórico menos os
-      3 meses mais recentes, o que aproxima muito mais o modelo de validação
-      do modelo real utilizado nas exportações mensais.
-    """
-    n = len(serie)
+    df_hist = carregar_historico()
 
-    # Mínimo: precisamos de dados suficientes para treino + 3 meses de teste
-    if n < MIN_POINTS_MODEL + N_TEST_FIXED:
-        return None
+    if df_hist.empty:
+        st.info("📭 Nenhum snapshot salvo ainda. Use o botão **💾 Salvar Snapshot** na seção de exportação para registrar as previsões de hoje.")
+        return
 
-    n_test  = N_TEST_FIXED
-    n_train = n - n_test
+    # Lista de extrações disponíveis
+    datas = sorted(df_hist["Data_Extracao"].dt.normalize().unique(), reverse=True)
+    opcoes = [d.strftime("%d/%m/%Y") for d in datas]
 
-    if n_train < MIN_POINTS_MODEL:
-        return None
+    st.markdown("### 📅 Selecione a extração a auditar")
+    escolha = st.selectbox("Data de extração", opcoes, key="auditoria_extracao")
+    dt_escolha = pd.Timestamp(pd.to_datetime(escolha, format="%d/%m/%Y"))
 
-    serie_train = serie.iloc[:n_train]
-    serie_test  = serie.iloc[n_train:]
+    df_prev = df_hist[df_hist["Data_Extracao"].dt.normalize() == dt_escolha].copy()
 
-    # Walk-forward 1-step-ahead: para cada mês de teste, retreina o modelo
-    # com todos os dados disponíveis até aquele ponto e projeta apenas 1 mês.
-    # Isso evita previsões flat (comum quando se projeta 6 meses de uma vez
-    # com série curta) e representa melhor o processo real de produção.
-    preds = []
-    for i in range(n_test):
-        train_i  = serie.iloc[:n_train + i]
-        n_i      = len(train_i)
-        seasonal = 'add' if n_i >= 24 else None
-        sp       = 12    if n_i >= 24 else None
-        damped   = n_i   >= 24
-        try:
-            m = ExponentialSmoothing(
-                train_i, trend='add', damped_trend=damped,
-                seasonal=seasonal, seasonal_periods=sp,
-                initialization_method='estimated'
-            ).fit(optimized=True)
-        except Exception:
-            try:
-                m = ExponentialSmoothing(
-                    train_i, trend='add', damped_trend=False,
-                    seasonal=None, initialization_method='estimated'
-                ).fit(optimized=True)
-            except Exception:
-                return None
-        preds.append(max(0, m.forecast(1).iloc[0]))
+    # Aplica filtro de produto se selecionado
+    if produto_atual != "TODOS":
+        df_prev = df_prev[df_prev["Produto"] == produto_atual]
 
-    pred = pd.Series(preds, index=serie_test.index)
+    if df_prev.empty:
+        st.warning("⚠️ Nenhuma previsão encontrada para os filtros aplicados nesta extração.")
+        return
 
-    real = serie_test.values
-    prev = pred.values
-    mask = real > 0
-    if mask.sum() == 0:
-        return None
+    # Agrega realizado por Produto + Mês (todos os clientes)
+    df_real = (
+        df.groupby(["Produto", "AnoMes"])["Quantidade"]
+        .sum()
+        .reset_index()
+        .rename(columns={"Quantidade": "Realizado"})
+    )
 
-    mape = np.mean(np.abs((real[mask] - prev[mask]) / real[mask])) * 100
-    mae  = np.mean(np.abs(real - prev))
-    rmse = np.sqrt(np.mean((real - prev) ** 2))
+    df_comp = df_prev[["Produto", "AnoMes", "Quantidade_Prevista"]].merge(
+        df_real, on=["Produto", "AnoMes"], how="inner"
+    )
+
+    if df_comp.empty:
+        meses_previstos = df_prev["AnoMes"].dt.strftime("%m/%Y").unique()
+        st.warning(
+            f"⚠️ Os meses previstos nesta extração ({', '.join(sorted(meses_previstos))}) "
+            f"ainda não têm realizado na base de vendas."
+        )
+        return
+
+    # ── Métricas globais ──────────────────────────────────────────────────────
+    mask = df_comp["Realizado"] > 0
+    mape = np.mean(np.abs(
+        (df_comp.loc[mask, "Realizado"] - df_comp.loc[mask, "Quantidade_Prevista"])
+        / df_comp.loc[mask, "Realizado"]
+    )) * 100
+    mae  = np.mean(np.abs(df_comp["Realizado"] - df_comp["Quantidade_Prevista"]))
+    rmse = np.sqrt(np.mean((df_comp["Realizado"] - df_comp["Quantidade_Prevista"]) ** 2))
 
     if mape <= 15:
         classificacao = "🟢 ÓTIMA"
@@ -260,92 +276,90 @@ def calcular_acuracia(serie):
     else:
         classificacao = "🔴 BAIXA"
 
-    return {
-        "mape":          round(mape, 1),
-        "mae":           round(mae, 1),
-        "rmse":          round(rmse, 1),
-        "classificacao": classificacao,
-        "n_train":       n_train,
-        "n_test":        n_test,
-        "real":          real,
-        "prev":          prev,
-        "datas_teste":   serie_test.index
-    }
-
-def show_acuracia_panel(serie, titulo):
-    st.markdown("---")
-    st.markdown("## 🎯 PAINEL DE ACURÁCIA DO MODELO")
-
-    acc = calcular_acuracia(serie)
-    if acc is None:
-        st.warning(
-            f"⚠️ Dados insuficientes para calcular acurácia "
-            f"(mínimo {MIN_POINTS_MODEL + N_TEST_FIXED} meses: "
-            f"{MIN_POINTS_MODEL} de treino + {N_TEST_FIXED} de teste)."
-        )
-        return
-
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("MAPE",      f"{acc['mape']}%",    help="Erro percentual médio — quanto menor, melhor")
-    col2.metric("MAE",       f"{acc['mae']:.0f}",  help="Erro absoluto médio em unidades")
-    col3.metric("RMSE",      f"{acc['rmse']:.0f}", help="Raiz do erro quadrático médio")
-    col4.metric("QUALIDADE", acc['classificacao'])
+    col1.metric("MAPE",      f"{mape:.1f}%",  help="Erro percentual médio real das previsões exportadas")
+    col2.metric("MAE",       f"{mae:.0f}",     help="Erro absoluto médio em unidades")
+    col3.metric("RMSE",      f"{rmse:.0f}",    help="Raiz do erro quadrático médio")
+    col4.metric("QUALIDADE", classificacao)
 
+    meses_auditados   = df_comp["AnoMes"].nunique()
+    produtos_auditados = df_comp["Produto"].nunique()
     st.caption(
-        f"📐 Metodologia: treino nos primeiros **{acc['n_train']} meses**, "
-        f"validação walk-forward nos últimos **{acc['n_test']} meses** (1 passo por vez). "
-        f"Cada ponto previsto retreina o modelo com todos os dados disponíveis até aquele mês."
+        f"📐 Extração de **{escolha}** | "
+        f"**{produtos_auditados} produtos** auditados em "
+        f"**{meses_auditados} {'mês' if meses_auditados == 1 else 'meses'}** com realizado disponível."
     )
 
-    df_comp = pd.DataFrame({
-        'Data':     acc['datas_teste'],
-        'Real':     acc['real'],
-        'Previsto': acc['prev'].round().astype(int)
-    })
+    # ── Gráfico consolidado por mês ───────────────────────────────────────────
+    df_mes = (
+        df_comp.groupby("AnoMes")[["Realizado", "Quantidade_Prevista"]]
+        .sum()
+        .reset_index()
+        .sort_values("AnoMes")
+    )
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=df_comp['Data'], y=df_comp['Real'],
-        name='Real', mode='lines+markers',
-        line=dict(color='#1d4ed8', width=2), marker=dict(size=7)
+        x=df_mes["AnoMes"], y=df_mes["Realizado"],
+        name="Realizado", mode="lines+markers",
+        line=dict(color="#1d4ed8", width=2), marker=dict(size=8)
     ))
     fig.add_trace(go.Scatter(
-        x=df_comp['Data'], y=df_comp['Previsto'],
-        name='Previsto', mode='lines+markers',
-        line=dict(color='#ea580c', width=2, dash='dash'),
-        marker=dict(size=7, symbol='x')
+        x=df_mes["AnoMes"], y=df_mes["Quantidade_Prevista"],
+        name=f"Previsto (extração {escolha})", mode="lines+markers",
+        line=dict(color="#ea580c", width=2, dash="dash"),
+        marker=dict(size=8, symbol="x")
     ))
     fig.update_layout(
-        title=f"REAL vs PREVISTO — ÚLTIMOS {N_TEST_FIXED} MESES | {titulo.upper()}",
-        title_x=0.5, hovermode='x unified',
+        title=f"REALIZADO vs PREVISTO — EXTRAÇÃO {escolha}",
+        title_x=0.5, hovermode="x unified",
         xaxis=dict(
-            title='<b>MÊS</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827'),
-            dtick='M1', tickformat='%m/%Y'
+            title="<b>MÊS</b>", title_font=dict(color="#111827"), tickfont=dict(color="#111827"),
+            dtick="M1", tickformat="%m/%Y"
         ),
-        yaxis=dict(title='<b>QUANTIDADE</b>', title_font=dict(color='#111827'), tickfont=dict(color='#111827')),
-        hoverlabel=dict(bgcolor='#1e293b', bordercolor='#334155', font=dict(color='#f8fafc', size=13)),
-        legend=dict(orientation='h', y=-0.2, font=dict(color='#111827'))
+        yaxis=dict(title="<b>QUANTIDADE</b>", title_font=dict(color="#111827"), tickfont=dict(color="#111827")),
+        hoverlabel=dict(bgcolor="#1e293b", bordercolor="#334155", font=dict(color="#f8fafc", size=13)),
+        legend=dict(orientation="h", y=-0.2, font=dict(color="#111827"))
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("ℹ️ Como interpretar o MAPE?"):
-        st.markdown("""
-| MAPE | Qualidade | Interpretação |
-|------|-----------|---------------|
-| ≤ 15% | 🟢 Ótima | Previsões confiáveis para tomada de decisão |
-| 16–30% | 🟡 Regular | Use com cautela, revise trimestralmente |
-| > 30% | 🔴 Baixa | Dados irregulares — evite decisões críticas |
-        """)
+    # ── MAPE por produto ──────────────────────────────────────────────────────
+    with st.expander("📊 MAPE POR PRODUTO"):
+        def mape_produto(g):
+            m = g["Realizado"] > 0
+            if m.sum() == 0:
+                return pd.Series({"MAPE (%)": None, "MAE": None, "Meses": len(g)})
+            return pd.Series({
+                "MAPE (%)": round(np.mean(np.abs(
+                    (g.loc[m, "Realizado"] - g.loc[m, "Quantidade_Prevista"])
+                    / g.loc[m, "Realizado"]
+                )) * 100, 1),
+                "MAE":  round(np.mean(np.abs(g["Realizado"] - g["Quantidade_Prevista"])), 0),
+                "Meses": len(g)
+            })
 
-    with st.expander("📋 TABELA REAL vs PREVISTO"):
-        df_comp['Erro Abs'] = (df_comp['Real'] - df_comp['Previsto']).abs()
-        df_comp['Erro %']   = np.where(
-            df_comp['Real'] > 0,
-            ((df_comp['Real'] - df_comp['Previsto']).abs() / df_comp['Real'] * 100).round(1),
+        df_por_produto = (
+            df_comp.groupby("Produto")
+            .apply(mape_produto)
+            .reset_index()
+            .sort_values("MAPE (%)", ascending=True)
+        )
+        st.dataframe(df_por_produto.set_index("Produto"), use_container_width=True)
+
+    # ── Tabela detalhada ──────────────────────────────────────────────────────
+    with st.expander("📋 TABELA DETALHADA"):
+        df_det = df_comp.copy()
+        df_det["Data"]      = df_det["AnoMes"].dt.strftime("%m/%Y")
+        df_det["Erro Abs"]  = (df_det["Realizado"] - df_det["Quantidade_Prevista"]).abs()
+        df_det["Erro (%)"]  = np.where(
+            df_det["Realizado"] > 0,
+            ((df_det["Realizado"] - df_det["Quantidade_Prevista"]).abs()
+             / df_det["Realizado"] * 100).round(1),
             np.nan
         )
-        df_comp['Data'] = df_comp['Data'].dt.strftime('%m/%Y')
-        st.dataframe(df_comp.set_index('Data'), use_container_width=True)
+        df_det = df_det[["Produto", "Data", "Realizado", "Quantidade_Prevista", "Erro Abs", "Erro (%)"]].sort_values(["Data", "Produto"])
+        st.dataframe(df_det.set_index("Produto"), use_container_width=True)
+
 
 def create_plot(df, title):
     try:
@@ -649,7 +663,7 @@ def show_dashboard():
             c8.metric("Desvio Padrão",    f"{fc['Quantidade'].std():.2f}")
             st.caption("ℹ️ Sazonalidade ativada automaticamente com 24+ meses de dados.")
 
-    show_acuracia_panel(serie, titulo)
+    show_auditoria_panel(df, grupo, cliente, produto)
     show_export_section(df, grupo, cliente, produto)
 
 def main():
