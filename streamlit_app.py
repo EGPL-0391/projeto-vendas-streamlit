@@ -228,17 +228,17 @@ def show_auditoria_panel(df, grupo_atual, produto_atual):
     meses_ref_validos = [m for m in meses_disponiveis if pd.Timestamp(m) < mes_auditado]
     opcoes_ref = [pd.Timestamp(m).strftime("%m/%Y") for m in meses_ref_validos]
 
-    # Default: 2 meses antes do auditado (padrão: extração feita no mês anterior
-    # quando o penúltimo mês era o último fechado)
-    default_ref = max(0, len(opcoes_ref) - 2)
+    # Default: mês imediatamente anterior ao auditado.
+    # Premissa: a extração é feita no mês M com dados até M, gerando a previsão de M+1.
+    default_ref = max(0, len(opcoes_ref) - 1)
 
     with col2:
         escolha_ref = st.selectbox(
             "📂 Último mês disponível na extração",
             opcoes_ref,
             index=default_ref,
-            help="Qual era o último mês de dados quando você rodou a extração? "
-                 "Isso garante que o modelo reproduz exatamente o que foi exportado.",
+            help="Último mês com dados na base quando você rodou a extração. "
+                 "Ex: se extraiu em março/26 com dados de março fechados, selecione março/26.",
             key="auditoria_ref"
         )
 
