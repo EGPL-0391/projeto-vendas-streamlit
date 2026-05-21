@@ -135,8 +135,11 @@ def load_data():
     grupo_col = find_column(df, 'Grupo')
     df['Grupo'] = df[grupo_col].astype(str).str.strip().str.upper() if grupo_col else 'SEM GRUPO'
 
-    return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']]
+    # ── SETOR (novo campo) ────────────────────────────────────────────────────
+    setor_col = find_column(df, 'Setor')
+    df['Setor'] = df[setor_col].astype(str).str.strip().str.upper() if setor_col else 'SEM SETOR'
 
+    return df[['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo', 'Setor']]
 
 
 def make_forecast_from_series(serie):
@@ -491,9 +494,10 @@ def create_plot(df, title):
         st.error(f"❌ Erro ao criar gráfico: {e}")
         return None
 
-def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
+def create_bar_chart(df, setor_atual, grupo_atual, cliente_atual, produto_atual):
     try:
-        dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
+        dfs = df if setor_atual == "TODOS" else df[df['Setor'] == setor_atual]
+        dfg = dfs if grupo_atual == "TODOS" else dfs[dfs['Grupo'] == grupo_atual]
         dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
         df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
 
@@ -509,9 +513,12 @@ def create_bar_chart(df, grupo_atual, cliente_atual, produto_atual):
         elif produto_atual != "TODOS" and cliente_atual == "TODOS":
             grouped = df_filtered.groupby('Cliente')['Quantidade'].sum().reset_index()
             titulo, x_label = f"CLIENTES QUE MAIS COMPRARAM - {produto_atual}", "CLIENTE"
-        elif cliente_atual == "TODOS" and produto_atual == "TODOS" and grupo_atual == "TODOS":
+        elif cliente_atual == "TODOS" and produto_atual == "TODOS" and grupo_atual == "TODOS" and setor_atual == "TODOS":
             grouped = df_filtered.groupby('Grupo')['Quantidade'].sum().reset_index()
             titulo, x_label = "LINHAS QUE MAIS VENDEM", "LINHA"
+        elif setor_atual != "TODOS" and grupo_atual == "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+            grouped = df_filtered.groupby('Grupo')['Quantidade'].sum().reset_index()
+            titulo, x_label = f"LINHAS QUE MAIS VENDEM - SETOR {setor_atual}", "LINHA"
         else:
             grouped = df_filtered.groupby('AnoMes')['Quantidade'].sum().reset_index()
             grouped['Mes_Ano'] = grouped['AnoMes'].dt.strftime('%m/%Y')
@@ -577,12 +584,16 @@ def to_excel_single(df):
     output.seek(0)
     return output
 
-def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
+def show_export_section(df, setor_atual, grupo_atual, cliente_atual, produto_atual):
     st.markdown("---")
     st.markdown("## 📋 EXPORTAÇÃO DE PREVISÕES POR PRODUTO")
-    st.info(f"📊 **Filtros Aplicados:** Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}")
+    st.info(
+        f"📊 **Filtros Aplicados:** Setor: {setor_atual} | "
+        f"Linha: {grupo_atual} | Cliente: {cliente_atual} | Produto: {produto_atual}"
+    )
 
-    dfg = df if grupo_atual == "TODOS" else df[df['Grupo'] == grupo_atual]
+    dfs = df if setor_atual == "TODOS" else df[df['Setor'] == setor_atual]
+    dfg = dfs if grupo_atual == "TODOS" else dfs[dfs['Grupo'] == grupo_atual]
     dfc = dfg if cliente_atual == "TODOS" else dfg[dfg['Cliente'] == cliente_atual]
     df_filtered = dfc if produto_atual == "TODOS" else dfc[dfc['Produto'] == produto_atual]
 
@@ -622,7 +633,9 @@ def show_export_section(df, grupo_atual, cliente_atual, produto_atual):
     col2.metric("📅 MESES",           len(df_export['Data'].unique()))
     col3.metric("📊 TOTAL PREVISÕES", len(df_export))
 
-    if grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+    if setor_atual != "TODOS" and grupo_atual == "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
+        suffix = f"setor_{setor_atual.replace(' ', '_')}"
+    elif grupo_atual != "TODOS" and cliente_atual == "TODOS" and produto_atual == "TODOS":
         suffix = f"grupo_{grupo_atual.replace(' ', '_')}"
     elif cliente_atual != "TODOS" and produto_atual == "TODOS":
         suffix = f"cliente_{cliente_atual.replace(' ', '_')}"
@@ -664,40 +677,68 @@ def show_dashboard():
         return load_data()
 
     df = get_data()
-    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo']):
+    if not validate_data(df, ['Cliente', 'Produto', 'Quantidade', 'AnoMes', 'Grupo', 'Setor']):
         st.stop()
 
     st.markdown("## 📈 ANÁLISE GRÁFICA")
 
-    for k, v in [('grupo_selecionado','TODOS'),('cliente_selecionado','TODOS'),('produto_selecionado','TODOS')]:
+    # ── Inicializa session_state (inclui setor) ───────────────────────────────
+    for k, v in [
+        ('setor_selecionado',   'TODOS'),
+        ('grupo_selecionado',   'TODOS'),
+        ('cliente_selecionado', 'TODOS'),
+        ('produto_selecionado', 'TODOS'),
+    ]:
         if k not in st.session_state:
             st.session_state[k] = v
 
-    grupos  = ["TODOS"] + sorted(df['Grupo'].unique())
-    grupo   = st.selectbox("SELECIONE A LINHA", grupos,
-                           index=grupos.index(st.session_state.grupo_selecionado)
-                           if st.session_state.grupo_selecionado in grupos else 0,
-                           key="grupo_select")
+    # ── Filtro 1: SETOR ───────────────────────────────────────────────────────
+    setores = ["TODOS"] + sorted(df['Setor'].unique())
+    setor   = st.selectbox(
+        "SELECIONE O SETOR", setores,
+        index=setores.index(st.session_state.setor_selecionado)
+        if st.session_state.setor_selecionado in setores else 0,
+        key="setor_select"
+    )
+    st.session_state.setor_selecionado = setor
+
+    # ── Filtro 2: GRUPO (cascata de setor) ────────────────────────────────────
+    dfs    = df if setor == "TODOS" else df[df['Setor'] == setor]
+    grupos = ["TODOS"] + sorted(dfs['Grupo'].unique())
+    if st.session_state.grupo_selecionado not in grupos:
+        st.session_state.grupo_selecionado = "TODOS"
+    grupo  = st.selectbox(
+        "SELECIONE A LINHA", grupos,
+        index=grupos.index(st.session_state.grupo_selecionado),
+        key="grupo_select"
+    )
     st.session_state.grupo_selecionado = grupo
 
-    dfg      = df if grupo == "TODOS" else df[df['Grupo'] == grupo]
+    # ── Filtro 3: CLIENTE (cascata de setor + grupo) ──────────────────────────
+    dfg      = dfs if grupo == "TODOS" else dfs[dfs['Grupo'] == grupo]
     clientes = ["TODOS"] + sorted(dfg['Cliente'].unique())
     if st.session_state.cliente_selecionado not in clientes:
         st.session_state.cliente_selecionado = "TODOS"
-    cliente  = st.selectbox("SELECIONE O CLIENTE", clientes,
-                            index=clientes.index(st.session_state.cliente_selecionado),
-                            key="cliente_select")
+    cliente  = st.selectbox(
+        "SELECIONE O CLIENTE", clientes,
+        index=clientes.index(st.session_state.cliente_selecionado),
+        key="cliente_select"
+    )
     st.session_state.cliente_selecionado = cliente
 
+    # ── Filtro 4: PRODUTO (cascata de setor + grupo + cliente) ───────────────
     dfc      = dfg if cliente == "TODOS" else dfg[dfg['Cliente'] == cliente]
     produtos = ["TODOS"] + sorted(dfc['Produto'].unique())
     if st.session_state.produto_selecionado not in produtos:
         st.session_state.produto_selecionado = "TODOS"
-    produto  = st.selectbox("SELECIONE O PRODUTO", produtos,
-                            index=produtos.index(st.session_state.produto_selecionado),
-                            key="produto_select")
+    produto  = st.selectbox(
+        "SELECIONE O PRODUTO", produtos,
+        index=produtos.index(st.session_state.produto_selecionado),
+        key="produto_select"
+    )
     st.session_state.produto_selecionado = produto
 
+    # ── Dados filtrados ───────────────────────────────────────────────────────
     dff = dfc if produto == "TODOS" else dfc[dfc['Produto'] == produto]
     if dff.empty:
         st.warning("⚠️ Nenhum dado com os filtros aplicados.")
@@ -708,7 +749,10 @@ def show_dashboard():
     serie   = grouped.set_index('AnoMes')['Quantidade'].sort_index()
     n       = len(serie)
 
-    if grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
+    # ── Título do gráfico ─────────────────────────────────────────────────────
+    if setor != "TODOS" and grupo == "TODOS" and cliente == "TODOS" and produto == "TODOS":
+        titulo = f"SETOR {setor} - CONSOLIDADO"
+    elif grupo != "TODOS" and cliente == "TODOS" and produto == "TODOS":
         titulo = f"GRUPO {grupo} - CONSOLIDADO"
     elif cliente != "TODOS" and produto == "TODOS":
         titulo = f"{cliente} - TODOS OS PRODUTOS"
@@ -742,7 +786,7 @@ def show_dashboard():
 
     st.markdown("---")
     st.markdown("## 📊 ANÁLISE DE VENDAS POR RANKING")
-    bar_fig = create_bar_chart(df, grupo, cliente, produto)
+    bar_fig = create_bar_chart(df, setor, grupo, cliente, produto)
     if bar_fig:
         st.plotly_chart(bar_fig, use_container_width=True)
     else:
@@ -770,7 +814,7 @@ def show_dashboard():
             st.caption("ℹ️ Sazonalidade ativada automaticamente com 24+ meses de dados.")
 
     show_auditoria_panel(df, grupo, produto)
-    show_export_section(df, grupo, cliente, produto)
+    show_export_section(df, setor, grupo, cliente, produto)
 
 def main():
     if not check_authentication():
